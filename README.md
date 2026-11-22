@@ -42,7 +42,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 2. 设置 → **HTTPS 解密**(即 MITM)→ 总开关打开 → 证书:生成并安装 → iOS 系统里完成两步:
    - 设置 → 通用 → VPN 与设备管理 → 安装 Shadowrocket 描述文件
    - 设置 → 通用 → 关于本机 → **证书信任设置** → 打开 Shadowrocket 根证书的信任开关(漏这步解密无效)
-3. HTTPS 解密页的 hostname 列表确认有 `one.google.com`(模块开启时自动追加)
+3. HTTPS 解密页的 hostname 列表确认有 `one.google.com`(模块开启时自动追加;若日志始终无 `[g1-acq]` 且连接显示未解密,再手动把 `one.google.com` 填进 hostname 列表末尾)
 4. 配置 → 模块 → 右上角 `+` → 填入上面的模块地址 → 安装
 5. 确认模块开关点亮,长按重连一次
 
