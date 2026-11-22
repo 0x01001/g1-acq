@@ -39,15 +39,18 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 ## 安装(Shadowrocket / 小火箭)
 
 1. 首页保持 VPN 开启
-2. 设置 → MITM → 确认证书已安装并在 iOS「证书信任设置」中开启信任
-3. 配置 → 模块 → 右上角 `+` → 填入上面的模块地址 → 安装
-4. 确认模块开关点亮,重连一次
+2. 设置 → **HTTPS 解密**(即 MITM)→ 总开关打开 → 证书:生成并安装 → iOS 系统里完成两步:
+   - 设置 → 通用 → VPN 与设备管理 → 安装 Shadowrocket 描述文件
+   - 设置 → 通用 → 关于本机 → **证书信任设置** → 打开 Shadowrocket 根证书的信任开关(漏这步解密无效)
+3. HTTPS 解密页的 hostname 列表确认有 `one.google.com`(模块开启时自动追加)
+4. 配置 → 模块 → 右上角 `+` → 填入上面的模块地址 → 安装
+5. 确认模块开关点亮,长按重连一次
 
 ## 工作范围
 
 - URL 匹配:`^https://one\.google\.com/ai\?`(仅订阅入口页,不拦全站)
-- MITM hostname:`one.google.com`
-- QUIC 屏蔽:模块自带规则拦截 UDP 443,避免 Google App 走 HTTP/3 绕过 MITM
+- MITM(设置 → HTTPS 解密)hostname:`one.google.com`
+- QUIC 屏蔽:模块自带规则拦截 UDP 443,避免 Google App 走 HTTP/3 绕过 HTTPS 解密
 
 ## 验证与排错
 
@@ -59,7 +62,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 | `目录优惠档: ...` | 响应里真实存在的全部优惠档 |
 | `主档不在目录,降级 ...` | 已自动使用备用档 |
 | `共改写 N 处` | 替换已执行 |
-| 完全没有 `g1-acq` | 脚本未触发,检查 VPN / MITM 证书 / 模块开关 |
+| 完全没有 `g1-acq` | 脚本未触发,检查 VPN / HTTPS 解密(证书安装 + 信任开关) / 模块开关 |
 
 改完 `SKU_MAP` 后:本地 `git push`,然后手机端清一次小火箭缓存(数据 → 清空所有数据)再重连即可拉到新脚本;jsDelivr 有约几分钟缓存,可手动 purge:`https://purge.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js`。
 
