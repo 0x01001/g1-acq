@@ -2,7 +2,7 @@
 
 [![Telegram](https://img.shields.io/badge/Telegram-AI羊毛交流群-26A5E4?logo=telegram&logoColor=white)](https://t.me/muihbb)
 
-> 💬 **AI羊毛交流群**:https://t.me/muihbb —— 交流 AI 优惠、订阅羊毛、模块使用问题
+> 💬 **AI羊毛交流群**:https://t.me/muihbb —— 交流 AI 优惠、订阅羊毛
 
 Google One(iOS)订阅入口的商品 ID 映射模块,适用于 **Shadowrocket / 小火箭**。
 
