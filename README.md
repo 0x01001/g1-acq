@@ -1,5 +1,9 @@
 # g1-acq
 
+[![Telegram](https://img.shields.io/badge/Telegram-AI羊毛交流群-26A5E4?logo=telegram&logoColor=white)](https://t.me/muihbb)
+
+> 💬 **AI羊毛交流群**:https://t.me/muihbb —— 交流 AI 优惠、订阅羊毛、模块使用问题
+
 Google One(iOS)订阅入口的商品 ID 映射模块,适用于 **Shadowrocket / 小火箭**。
 
 在 `one.google.com/ai` 订阅页的响应里,把 20TB、30TB 两个月付档的原始 iOS 内购 ID 替换为实际存在的优惠档 ID,让订阅面板直接以优惠档拉起 App Store 收银台。
