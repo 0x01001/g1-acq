@@ -38,6 +38,10 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 
 ## 安装(Shadowrocket / 小火箭)
 
+进入「HTTPS 解密」设置的入口:配置页 → 点当前使用配置右侧的 **(i) 图标**,在弹出的配置编辑页里找到 **HTTPS 解密**。
+
+![配置页入口:点击 shadowrocket.conf 右侧的 (i) 图标进入配置编辑,才能看到 HTTPS 解密](docs-config-entry.png)
+
 1. 首页保持 VPN 开启
 2. 设置 → **HTTPS 解密**(即 MITM)→ 总开关打开 → 证书:生成并安装 → iOS 系统里完成两步:
    - 设置 → 通用 → VPN 与设备管理 → 安装 Shadowrocket 描述文件
