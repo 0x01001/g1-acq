@@ -79,6 +79,15 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 
 改完 `SKU_MAP` 后:本地 `git push`,然后手机端清一次小火箭缓存(数据 → 清空所有数据)再重连即可拉到新脚本;jsDelivr 有约几分钟缓存,可手动 purge:`https://purge.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js`。
 
+## 权限与安全边界
+
+- **流量可见范围**:脚本仅匹配 `one.google.com/ai` 的 HTTP 响应,可读取并改写该页面的响应体;其余任何域名的流量一概不读取、不修改
+- **无外发能力**:脚本不包含 `$httpClient` 等网络调用,所有输出只写入手机本地日志
+- **MITM 范围**:仅追加 `one.google.com` 一个 hostname;CA 证书由用户在本机生成并保管,模块作者无法获取
+- **系统权限**:不索取任何 iOS 权限(无通知/定位/相册等弹窗);安装动作只发生在小火箭内部
+- **全局副作用**:`[Rule]` 屏蔽全部 UDP 443(QUIC),影响所有 App 的 HTTP/3 访问速度,属性能副作用,无隐私影响
+- **信任模型**:脚本地址指向 GitHub 仓库 + jsDelivr CDN。安装即表示信任仓库所有者对脚本的后续修改(理论上恶意版本最多可获取 `one.google.com/ai` 这一个域的 Cookie 与页面数据,其他站点一律碰不到),以及 GitHub / jsDelivr 的服务完整性。脚本开源,任何人可审查;分发时可把 `@main` 换成具体 commit hash 锁定不可变版本
+
 ## 文件
 
 | 文件 | 用途 |
