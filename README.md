@@ -56,6 +56,15 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js
 - MITM(设置 → HTTPS 解密)hostname:`one.google.com`
 - QUIC 屏蔽:模块自带规则拦截 UDP 443,避免 Google App 走 HTTP/3 绕过 HTTPS 解密
 
+## 使用流程(手机端)
+
+1. 打开 **Google App**(彩色 G 图标那个) → 头像 → **Google One 管理**,进入订阅管理页(模块改写的就是这个页面发出的 `/ai` 响应)
+2. 在 Ultra 方案选择面板里,直接点 **20TB 档的「订阅此方案」**,App Store 收银台即以优惠价(约一折)拉起;30TB 档同理
+
+![Google One Ultra 方案选择面板:点击 20TB 档的「订阅此方案」按钮](docs-ultra-plans.png)
+
+> 注意:从 Google One 独立 App 进入的订阅页走的是原生接口,不在本模块的改写范围内;请从 **Google App 内的 Google One 管理** 进入。
+
 ## 验证与排错
 
 进 数据 → 日志 → 代理,搜索 `g1-acq`:
