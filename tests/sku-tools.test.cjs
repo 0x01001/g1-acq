@@ -299,7 +299,8 @@ test("report handles unavailable storage and skips other URL paths", () => {
   }
 });
 
-test("stable modules keep main URLs, the original G1 ACQ identity and one shared mapping script", () => {
+test("the original G1 ACQ identity remains and all modules share one pinned script revision", () => {
+  let scriptBase;
   for (const file of ["g1-acq.sgmodule", "g1-pro-annual-test.sgmodule", "g1-sku-scan.sgmodule"]) {
     const module = fs.readFileSync(path.join(root, file), "utf8");
     const scripts = module.split("\n").filter(line => line.includes("script-path="));
@@ -307,7 +308,10 @@ test("stable modules keep main URLs, the original G1 ACQ identity and one shared
     if (file === "g1-acq.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert(url.startsWith("https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/"));
+      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@[a-f0-9]{40}\/[a-z0-9.-]+\.js$/);
+      const base = url.slice(0, url.lastIndexOf("/") + 1);
+      if (!scriptBase) scriptBase = base;
+      assert.equal(base, scriptBase);
       assert(fs.existsSync(path.join(root, url.split("/").at(-1))));
     }
     assert.match(module, /hostname = %APPEND% one\.google\.com/);
@@ -319,10 +323,10 @@ test("stable modules keep main URLs, the original G1 ACQ identity and one shared
     if (file !== "g1-sku-scan.sgmodule") {
       assert(!pattern.test("https://one.google.com/ai"));
       assert.equal(responseLine.match(/script-path=([^,\s]+)/)[1],
-        "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js");
+        scriptBase + "g1-acq.js");
     }
     const requestLine = scripts.find(line => line.includes("type=http-request"));
     assert.equal(requestLine.match(/script-path=([^,\s]+)/)[1],
-      "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-report.js");
+      scriptBase + "g1-sku-report.js");
   }
 });

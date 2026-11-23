@@ -12,7 +12,7 @@
 https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
 ```
 
-已安装原地址 **G1 ACQ** 的用户直接在小火箭模块管理中更新原模块，更新后重新连接，再重新打开 Google App 的方案页；保持原名称与安装 URL，无需新建版本模块。首次安装也使用上面的同一地址。模块内响应脚本仍引用 `https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js`，新增本地报告引用 `https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-report.js`，无需单独添加脚本。
+已安装原地址 **G1 ACQ** 的用户直接在小火箭模块管理中更新原模块，更新后重新连接，再重新打开 Google App 的方案页；保持原名称与安装 URL，无需新建版本模块。首次安装也使用上面的同一地址。模块内部响应脚本与本地报告脚本由模块引用已验证提交，更新原模块时同步更新，无需手动处理内部脚本。
 
 **G1 SKU Scan — 网页 SKU 被动采集**
 
@@ -20,7 +20,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
 https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 ```
 
-采集器也沿用上面的固定 `@main` 路径更新，内部 `script-path` 统一引用 `@main`。历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；已有这些标签的副本时停用即可，当前更新流程使用原 **G1 ACQ** 地址。主分支 [G1 Pro Annual Test 兼容入口](../g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](../g1-acq.js)，无需另外启用。
+采集器也沿用上面的固定 `@main` 安装路径更新，内部脚本由模块引用已验证提交，随模块同步更新。历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；已有这些标签的副本时停用即可，当前更新流程使用原 **G1 ACQ** 地址。主分支 [G1 Pro Annual Test 兼容入口](../g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](../g1-acq.js)，无需另外启用。
 
 **G1 ACQ** 与 **G1 SKU Scan** 都包含本地报告脚本。为区分原始页面与改写结果，分阶段启用：
 
@@ -150,7 +150,7 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 | 观察结果 | 下一步 |
 |---|---|
 | 报告页显示“暂无记录” | 核对启用的模块与 HTTPS 解密配置，再从 Google App 重新加载目标方案；以报告中的时间与扫描响应计数判断是否有新数据 |
-| 测试后仍显示旧脚本版本 | 在原地址更新 G1 ACQ 模块并刷新其引用脚本，重新连接后重开方案页；以新记录的 `test.version` 或日志核对 `g1-acq-v7`，保持原安装 URL |
+| 测试后仍显示旧脚本版本 | 在原地址更新 G1 ACQ 模块，内部脚本随模块同步更新；重新连接后重开方案页，以新记录的 `test.version` 或日志核对 `g1-acq-v7`，保持原安装 URL |
 | Safari 显示 Google 普通页面或 404，而不是本地报告 | 核对地址是否为精确 `/g1-sku-report` 路径、G1 ACQ 或 G1 SKU Scan 是否开启、小火箭是否连接、当前配置是否解密 `one.google.com` |
 | 报告页显示本地存储接口暂未就绪 | 页面脚本未取得 `$persistentStore` 读取接口，当前页面不构成采集成功的证据；记录显示结果与小火箭版本 |
 | 扫描响应计数增加，但没有候选 ID | 本次已处理的正文未出现匹配字符串；继续浏览实际提供的 2TB / Pro 与月付、年付页面，不凭空生成 ID |

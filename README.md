@@ -18,7 +18,7 @@ Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **
 https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
 ```
 
-已安装该地址时，在小火箭模块管理中更新原 **G1 ACQ**，保持原名称与地址；更新后重新连接，再重新进入 Google App 的订阅页。首次安装也使用上面的同一地址。模块内部响应脚本仍为 `https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js`，本地报告脚本为 `https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-report.js`，无需单独添加脚本。
+已安装该地址时，在小火箭模块管理中更新原 **G1 ACQ**，保持原名称与地址；更新后重新连接，再重新进入 Google App 的订阅页。首次安装也使用上面的同一地址。模块内部响应脚本与本地报告脚本由模块引用已验证提交，更新原模块时同步更新，无需手动处理内部脚本。
 
 **G1 SKU Scan：网页 SKU 被动采集**
 
@@ -26,7 +26,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
 https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 ```
 
-采集器也使用固定的 `@main` 路径更新，内部脚本引用同一分支。它读取 `one.google.com/` 响应中出现的 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计次数，最多保留 300 个 ID；跳过自带结果页，通过 `$done({})` 原样返回响应。手机只保存候选 ID、次数、时间与扫描状态，不查询 App Store，不发网络上报。
+采集器也使用固定的 `@main` 安装路径更新，内部脚本由模块引用已验证提交，随模块同步更新。它读取 `one.google.com/` 响应中出现的 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计次数，最多保留 300 个 ID；跳过自带结果页，通过 `$done({})` 原样返回响应。手机只保存候选 ID、次数、时间与扫描状态，不查询 App Store，不发网络上报。
 
 历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；手机上已有这些版本的副本时停用即可。主分支 [G1 Pro Annual Test 兼容入口](g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](g1-acq.js)，无需另外启用。
 
@@ -88,7 +88,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 | `源 SKU → 实际目标 xN` | 逐行记录完整源 ID、本次实际目标与该源改写次数 |
 | `fallback=75p` | 该行 20TB / 30TB 使用了正文中出现的对应 75p 备用档 |
 
-若没有新记录，先核对 VPN 连接、模块开关、当前配置的 HTTPS 解密、证书安装与信任、`one.google.com` hostname，再从 Google App 重新打开方案。若仍显示旧版本，在原地址更新模块并刷新其引用脚本，重新连接后以新记录的 `test.version` 或日志核对 `g1-acq-v7`，无需更换安装 URL；缓存处理不包含“清空所有数据”。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
+若没有新记录，先核对 VPN 连接、模块开关、当前配置的 HTTPS 解密、证书安装与信任、`one.google.com` hostname，再从 Google App 重新打开方案。若仍显示旧版本，在原地址更新模块，内部脚本随模块同步更新；重新连接后以新记录的 `test.version` 或日志核对 `g1-acq-v7`，无需更换安装 URL；缓存处理不包含“清空所有数据”。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
 
 ## 工作范围与本地存储
 
@@ -103,7 +103,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 - **MITM 范围**：模块只追加 `one.google.com`，其全站流量进入解密范围；页面改写受脚本路径限制。证书在设备生成、安装与信任，HTTPS 解密设置属于当前配置。
 - **系统权限**：脚本没有申请定位、相册、通知的调用；使用过程包含小火箭 VPN 连接和 iOS 描述文件、根证书信任配置。
 - **全局规则影响**：模块的 `[Rule]` 拦截全局 UDP 443，促使支持回退的 QUIC 请求改走 TCP，也会影响其它 App 的 HTTP/3 使用、速度或连通性。
-- **版本与存储**：当前模块与内部脚本统一引用 `@main`，后续更新沿用原地址；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
+- **版本与存储**：模块安装地址保留 `@main`，内部脚本由模块引用已验证提交，更新原模块时同步更新；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
 
 ## 文件
 
