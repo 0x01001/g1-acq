@@ -1,31 +1,35 @@
 # Pro 年付测试与 SKU 扫描
 
-本工具把订阅页中实际出现的 **原始 iOS 2TB** 商品编号改写为 `g1.2tb.ai.annual`，用于在手机上核对 App Store 的实际响应。源编号必须是完整 SKU，且前缀为 `g1.ios.2tb.`；20TB、30TB 保持原样，没有备用目标。
+新版 **G1 Pro Annual Test** 合并三档改写：把订阅页中实际出现、前缀为 `g1.ios.2tb.` 的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual`，同时沿用旧 v6 的 20TB / 30TB 优惠映射与各档独立的 75p 回退逻辑。2TB 年付目标没有备用档；20TB / 30TB 的完整源 ID 与目标见第 4 节，一个新版模块即可覆盖三档。
 
 `g1.2tb.ai.annual` 在 Google Play 公开记录中对应 Pro、`P1Y`（一年）、`US$199.99`。这条记录只说明 Play 中的商品信息，不确认 iOS 可购买，也不确认 iOS 一折价格。目前已证实匹配逻辑与脚本离线测试，App Store 识别结果、商品名称、周期、初次与续费金额均待实机核对。
 
-## 1. 安装独立模块
+## 1. 安装新版模块
 
-两个模块使用固定版本标签 `pro-annual-test-v1`，内部 `script-path` 同样引用该标签。
+两个新模块使用固定版本标签 `pro-annual-test-v2`，内部 `script-path` 同样引用该标签。
 
 **G1 SKU Scan — 网页 SKU 被动采集**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/g1-sku-scan.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v2/g1-sku-scan.sgmodule
 ```
 
-**G1 Pro Annual Test — 原始 iOS 2TB 年付测试**
+**G1 Pro Annual Test — 原始 iOS 2TB 年付测试，合并旧 20TB / 30TB 映射**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/g1-pro-annual-test.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v2/g1-pro-annual-test.sgmodule
 ```
+
+模块文件名 `g1-pro-annual-test.sgmodule` 与开关名称 **G1 Pro Annual Test** 保持不变。旧 `pro-annual-test-v1` 标签继续保留；已安装 v1 的手机需添加上面的 **v2 地址**并停用 v1，旧固定地址不会自动切换到 v2。新版采集模块也使用上面的 v2 地址。
 
 两个模块都包含本地报告脚本，只需添加模块地址。为区分原始页面与改写结果，分阶段启用：
 
-| 阶段 | G1 SKU Scan | G1 Pro Annual Test | 旧 G1 ACQ / 其它同页 SKU 改写模块 |
+| 阶段 | G1 SKU Scan（v2） | G1 Pro Annual Test（v2） | 旧 G1 ACQ / v1 年付测试 / 其它同页 SKU 改写模块 |
 |---|---|---|---|
 | 采集原始 SKU | 开启 | 关闭 | 关闭 |
-| 测试 Pro 年付目标 | 关闭 | 开启 | 关闭 |
+| 测试合并三档（含 Pro 年付） | 关闭 | 开启 | 关闭 |
+
+采集阶段仅开 **G1 SKU Scan**，停用全部 SKU 改写模块；测试阶段仅开 **v2 G1 Pro Annual Test**。新版已覆盖 20TB / 30TB，无需并开旧 **G1 ACQ**；旧模块和 v1 年付测试保持停用，避免重复处理。
 
 模块共用两份手机本地记录，切换模块后仍可打开同一结果页查看。两个新模块均只追加 MITM hostname `one.google.com`，并沿用旧模块的全局 UDP 443 拦截规则；后者也会影响其它 App 的 HTTP/3、速度或连通性。
 
@@ -46,11 +50,11 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/g1-pro-annual-test
 
 被动采集记录手机实际加载页面中出现的编号，作为确定源 ID 的依据。
 
-1. 停用旧 **G1 ACQ** 和其它改写同一订阅页 SKU 的模块，关闭 **G1 Pro Annual Test**，仅启用 **G1 SKU Scan**。
-2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，打开页面提供的 **2TB / Pro** 方案。
+1. 停用全部 SKU 改写模块，包括旧 **G1 ACQ**、v1 与 v2 **G1 Pro Annual Test**，仅启用 **G1 SKU Scan**。
+2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，打开页面提供的 **2TB / Pro** 方案；核对保留映射时，再浏览实际提供的 **20TB / 30TB** 方案。
 3. 页面提供月付、年付切换时，逐个浏览并等待页面加载完成。采集阶段浏览方案即可，无需完成购买；账号、地区、App 版本决定实际显示的方案与控件。
 4. 保持小火箭连接，在同一手机的 Safari 打开 [SKU 本地报告](https://one.google.com/g1-sku-report)。
-5. 查看“浏览页面时采集到的候选 SKU”，记录完整编号、次数、最近发现时间。寻找实际出现的 `g1.ios.2tb.` 前缀完整编号，不自行补全或猜测后缀。
+5. 查看“浏览页面时采集到的候选 SKU”，记录完整编号、次数、最近发现时间。寻找实际出现的 `g1.ios.2tb.` 前缀完整编号；20TB / 30TB 对照第 4 节的两个完整源 ID，不自行补全或猜测后缀。
 6. 打开 [JSON 导出](https://one.google.com/g1-sku-report?format=json)，保存本轮采集结果。
 
 采集器匹配 `https://one.google.com/` 下的文本响应，跳过自身的 `/g1-sku-report` 精确路径及其 query。它识别 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计出现次数；同一 ID 在一个响应中重复出现，或在后续采集响应中再次出现，都会增加次数，次数不是购买次数。
@@ -59,32 +63,50 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/g1-pro-annual-test
 
 采集器会在用于识别的文本副本中还原 `\u002e`、`\x2e` 与 HTML 点号实体。响应正文通过 `$done({})` 原样返回；采集器不读取请求头或请求体，不保存完整响应正文，不查询 App Store，不向外发送采集数据。
 
-## 4. 再测试 `g1.2tb.ai.annual`
+## 4. 再测试 `g1.2tb.ai.annual` 与 20TB / 30TB 映射
 
 测试阶段关闭采集器，避免把改写后的编号混入原始 SKU 采集结果。
 
-1. 关闭 **G1 SKU Scan**，启用 **G1 Pro Annual Test**；旧 **G1 ACQ** 和其它同页 SKU 改写模块继续关闭。
+1. 关闭 **G1 SKU Scan**，只启用 **v2 G1 Pro Annual Test**；旧 **G1 ACQ**、v1 年付测试和其它同页 SKU 改写模块继续关闭。
 2. 核对当前配置右侧 **(i) → HTTPS 解密** 中的开关、`one.google.com` hostname 和 iOS 证书信任，然后重新连接小火箭。
-3. 退出当前方案页，再从 **Google App（彩色 G）→ Google One 管理** 重新进入 **2TB / Pro** 方案。此测试的源商品是原始 iOS 2TB。
-4. 从页面实际提供的 2TB 方案进入订阅流程，核对 App Store 收银台中的 **商品名称、订阅周期、币种、初次金额、续费金额**。若未拉起收银台，记录屏幕上的实际提示。
-5. 在 Safari 打开 [本地报告](https://one.google.com/g1-sku-report)，查看“最近一次 Pro 年付测试”的执行时间、状态、替换次数和完整源编号。
-6. 打开 [JSON 导出](https://one.google.com/g1-sku-report?format=json)，保留 `test.matchedFrom`、`test.target`、`test.hitCount` 与 `test.updatedAt`，将它们和本次 App Store 显示结果一起记录。
+3. 退出当前方案页，再从 **Google App（彩色 G）→ Google One 管理** 重新进入 **2TB / Pro** 方案。年付实验的源商品是原始 iOS 2TB；核对保留映射时分别打开页面实际提供的 20TB / 30TB 方案。
+4. 从页面实际提供的方案进入订阅流程，核对 App Store 收银台中的 **商品名称、订阅周期、币种、初次金额、续费金额**。若未拉起收银台，记录屏幕上的实际提示；2TB、20TB、30TB 的结果分别记录。
+5. 在 Safari 打开 [本地报告](https://one.google.com/g1-sku-report)，查看“最近一次三档映射”的版本、执行时间与状态；“总替换次数”是三档总数，“其中 2TB”是年付改写数，下方按行显示完整源编号、实际目标与备用状态。
+6. 打开 [JSON 导出](https://one.google.com/g1-sku-report?format=json)，保留 `test.version`、`test.matchedFrom`、`test.target`、`test.hitCount`、`test.annualHitCount`、`test.status` 与 `test.updatedAt`，将它们和本次 App Store 显示结果一起记录。
 
-脚本只处理匹配 `^https://one\.google\.com/ai\?` 的响应。在响应原文中先识别完整编号，再筛选 `g1.ios.2tb.` 前缀；匹配到的完整源 ID 全部替换为 `g1.2tb.ai.annual`。20TB、30TB 和其它编号保持原样，没有 fallback，也不要求目标 ID 预先出现在正文中。
+脚本只处理匹配 `^https://one\.google\.com/ai\?` 的响应。在响应原文中先识别完整明文编号，再应用以下三档映射：
+
+| 正文中的完整源 SKU | 默认目标 | 备用目标 |
+|---|---|---|
+| `g1.ios.2tb.` 前缀的完整 SKU | `g1.2tb.ai.annual` | 无 |
+| `g1.ios.20tb.m.v2` | `g1.20tb.3months_ip_90p.acq` | `g1.20tb.3months_ip_75p.acq` |
+| `g1.ios.30tb.ai.pro.m` | `g1.ai.ultra.3months_ip_90p.acq` | `g1.ai.ultra.3months_ip_75p.acq` |
+
+2TB 匹配到的完整源 ID 固定替换为 `g1.2tb.ai.annual`，没有备用目标，也不要求目标预先出现在正文中。20TB / 30TB 必须命中表中的完整源 ID，各档独立按原始响应正文决定目标，逻辑与旧 v6 一致：
+
+- 默认 90p 目标出现在正文中时，使用 90p；即使对应 75p 也出现，仍优先 90p。
+- 默认 90p 目标未出现、对应 75p 备用目标出现时，使用该档的 75p，记录 `fallback=true`。
+- 默认 90p 与对应 75p 均未出现时，仍按默认 90p 替换。
+
+20TB 的回退判断只使用 20TB 的目标，30TB 的回退判断只使用 30TB 的目标。这是响应正文中的目标字符串判断，不是向 App Store 或 Google Play 查询商品目录。其它编号保持原样；三档都未命中时原样返回响应。
 
 | 报告字段 | 含义 |
 |---|---|
-| `test.matchedFrom` | 本次响应实际命中的完整源 ID 与各自出现次数，格式为 `{id, count}` |
-| `test.target` | 固定目标 `g1.2tb.ai.annual` |
-| `test.hitCount` | 本次响应总替换次数；脚本输出中的 `hits=N` 对应此值 |
+| `test.version` | 生成该执行记录的脚本版本；新版为 `pro-annual-test-v2` |
+| `test.matchedFrom` | 本次响应实际命中的完整源 ID，逐行格式为 `{id, to, count, fallback}`；`to` 是该源本次实际目标，`count` 是该源的改写次数，`fallback=true` 表示 20TB / 30TB 使用对应 75p 备用档 |
+| `test.target` | 仍专指 2TB 年付目标 `g1.2tb.ai.annual`；20TB / 30TB 的实际目标看各行 `to` |
+| `test.hitCount` | 本次响应三档总改写数；脚本输出中的 `hits=N` 对应此值 |
+| `test.annualHitCount` | 本次响应仅 2TB 年付改写数 |
 | `test.updatedAt` | 最近一次执行时间，UTC |
-| `test.status = rewritten` | 已执行字符串替换 |
-| `test.status = no-match` | 本次文本响应没有匹配到 `g1.ios.2tb.` 前缀完整编号，响应原样返回 |
+| `test.status = rewritten` | 三档中至少一档已执行字符串替换；只有 20TB / 30TB 命中时也为此状态 |
+| `test.status = no-match` | 本次文本响应三档完整源 ID 都未命中，响应原样返回 |
 | `test.status = non-text` | 本次响应没有可处理的文本正文，响应原样返回 |
 
 这里保存的是**最近一次匹配 URL 的执行记录**，不是累计测试历史；后续零命中响应也会更新记录。核对时对照执行时间，命中次数仅证明文本替换，不证明 App Store 接受目标商品或已完成订阅。
 
-零命中不等于账号没有 2TB 商品，也不等于目标商品不存在。它只说明本次响应未包含脚本可匹配的源编号。采集器覆盖整个 `one.google.com/`，并可识别转义点号；年付测试仅改写 `/ai?` 原文中的完整明文编号。因此采集页出现候选 ID，不保证另一条 `/ai?` 响应能命中。零命中时切回采集流程取得实际编号，不推测新的 iOS SKU。
+`hitCount=0` 与 `status=no-match` 表示本次文本响应三档都未命中，不等于账号没有 2TB 商品，也不等于目标商品不存在。若 `annualHitCount=0`、`hitCount>0`，说明只命中了 20TB / 30TB，状态仍为 `rewritten`；判断 2TB 年付实验须看 `annualHitCount`，再对照各行 `id` 与 `to`。
+
+采集器覆盖整个 `one.google.com/`，并可识别转义点号；合并改写仅处理 `/ai?` 原文中的完整明文编号。因此采集页出现候选 ID，不保证另一条 `/ai?` 响应能命中。目标档未命中时切回采集流程取得实际编号，不推测新的 iOS SKU。
 
 ## 5. 本地结果页、导出与清理
 
@@ -92,18 +114,20 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/g1-pro-annual-test
 
 | 地址 | 动作 |
 |---|---|
-| [本地报告](https://one.google.com/g1-sku-report) | 显示累计采集结果与最近一次年付测试记录 |
+| [本地报告](https://one.google.com/g1-sku-report) | 显示累计采集结果与最近一次三档合并测试记录 |
 | [导出 JSON](https://one.google.com/g1-sku-report?format=json) | 返回 `g1-sku-report.json` 下载响应 |
 | [清空本工具记录](https://one.google.com/g1-sku-report?clear=1) | 清空本工具的采集记录与最近测试记录 |
 
 结果页由 Shadowrocket 的 `http-request` 脚本拦截 **`https://one.google.com/g1-sku-report` 精确路径及其 query**，在本机生成 HTML 或 JSON 并直接返回，不把这次页面请求交给 Google 处理。HTML 不加载外部资源，结果页和导出脚本没有网络上报调用。
 
-数据保存在手机 `$persistentStore` 中：
+数据保存在手机 `$persistentStore` 中，两个键名与 `schemaVersion: 1` 均保持不变：
 
 | 键 | 内容 |
 |---|---|
 | `g1.sku.scan.v1` | 候选 ID、累计次数、最近发现时间、扫描响应计数与上限状态 |
-| `g1.pro.annual.test.v1` | 最近一次执行的源前缀、命中源 ID、目标、次数、时间和状态 |
+| `g1.pro.annual.test.v1` | 最近一次执行的脚本版本、2TB 源前缀、三档命中源 ID 与逐行实际目标及备用状态、2TB 目标、总改写数、2TB 改写数、时间和状态 |
+
+HTML 按命中行显示完整源 ID、实际目标、次数与备用状态，避免把 `test.target` 误读成 20TB / 30TB 的目标。新版结果页兼容旧 v1 的仅 2TB 记录：旧行缺少 `to` 时补为 `g1.2tb.ai.annual`，缺少的 `annualHitCount` 从旧 2TB 行次数计算；旧行按未使用备用档展示。保留旧记录无需先清空这两个键。
 
 JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastSeen`；测试字段见第 4 节。导出还包含必要的版本、存储状态与统计字段，不包含请求头、请求体或完整响应正文。
 
@@ -127,8 +151,11 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 | Safari 显示 Google 普通页面或 404，而不是本地报告 | 核对地址是否为精确 `/g1-sku-report` 路径、任一新模块是否开启、小火箭是否连接、当前配置是否解密 `one.google.com` |
 | 报告页显示本地存储接口暂未就绪 | 页面脚本未取得 `$persistentStore` 读取接口，当前页面不构成采集成功的证据；记录显示结果与小火箭版本 |
 | 扫描响应计数增加，但没有候选 ID | 本次已处理的正文未出现匹配字符串；继续浏览实际提供的 2TB / Pro 与月付、年付页面，不凭空生成 ID |
-| 已采集到 ID，但年付测试 `hitCount` 为 0 | 对照执行时间、完整源 ID、`g1.ios.2tb.` 前缀与 `/ai?` 匹配范围；按第 3 节重新采集 |
-| `hitCount` 大于 0，但收银台报错或未出现 | 记录实际提示；文本替换成功与商店接受目标商品分别记录 |
+| 已采集到 2TB ID，但 `annualHitCount` 为 0 | 对照执行时间、完整源 ID、`g1.ios.2tb.` 前缀与 `/ai?` 匹配范围；按第 3 节重新采集 |
+| `status=rewritten`、`hitCount>0`，但 `annualHitCount=0` | 本次只改写了 20TB / 30TB；查看各行 `id`、`to` 与 `fallback`，此状态不代表 2TB 年付命中 |
+| `status=no-match`、`hitCount=0` | 本次文本响应三档都未命中；对照第 4 节完整源 ID 与 URL 范围，再按第 3 节采集 |
+| 20TB / 30TB 的 `fallback=true` | 对应默认 90p 未见于原始正文，已选用正文中的该档 75p；核对该行 `to` 和收银台实际结果 |
+| `hitCount` 大于 0，但收银台报错或未出现 | 记录实际提示与该档的实际目标 `to`；文本替换成功与商店接受目标商品分别记录 |
 | App Store 商品、周期或金额与预期不同 | 按收银台实际显示记录，不把 Play 中的 `P1Y / US$199.99` 套用为 iOS 结论 |
 | 采集达到 300 个上限 | 先导出，再用 `?clear=1` 清空本工具记录，返回报告主页后集中浏览目标方案 |
 
@@ -137,15 +164,18 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 ```text
 采集 / 测试时间（含时区）：[填写]
 iOS / Google App / Shadowrocket 版本：[填写]
-模块版本：pro-annual-test-v1
-当前阶段：采集 / 年付测试
+模块版本：pro-annual-test-v2
+当前阶段：采集 / 三档合并测试（含 2TB 年付）
 当前启用模块：[填写]
-Google App 内实际打开的方案名称：[填写]
+Google App 内实际打开的方案名称：[填写 2TB / Pro、20TB 或 30TB 的实际名称]
 采集到的原始 iOS 2TB 完整 SKU：[填写原文；未出现则记“未采集到”]
+采集到的原始 iOS 20TB / 30TB 完整 SKU：[填写原文；未出现则记“未采集到”]
+执行脚本版本 test.version：[填写]
 最近测试时间 test.updatedAt：[填写]
-命中源 ID 与次数 test.matchedFrom：[填写]
-目标 test.target：g1.2tb.ai.annual
-总替换次数 test.hitCount：[填写]
+逐行源 ID、实际目标、次数、备用状态 test.matchedFrom：[填写 {id, to, count, fallback}]
+2TB 固定目标 test.target：g1.2tb.ai.annual
+三档总改写数 test.hitCount：[填写]
+仅 2TB 年付改写数 test.annualHitCount：[填写]
 执行状态 test.status：[填写]
 是否拉起 App Store 收银台：[填写]
 App Store 商品名称：[填写实际显示]

@@ -70,7 +70,7 @@
   }
   var state = {
     schemaVersion: 1,
-    version: "pro-annual-test-v1",
+    version: "pro-annual-test-v2",
     updatedAt: now,
     scannedResponses: priorCount(saved.scannedResponses) + 1,
     matchedResponses: priorCount(saved.matchedResponses) + (hitCount > 0 ? 1 : 0),

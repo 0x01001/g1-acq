@@ -47,13 +47,24 @@
         /^(?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]{1,160}$/.test(row.id);
     }).map(function (row) {
       var out = { id: row.id, count: count(row.count) };
-      if (withTime) out.lastSeen = text(row.lastSeen, 32);
+      if (withTime) {
+        out.lastSeen = text(row.lastSeen, 32);
+      } else {
+        out.to = typeof row.to === "string" && /^g1\.[A-Za-z0-9._-]{1,160}$/.test(row.to) ?
+          row.to : row.id.indexOf("g1.ios.2tb.") === 0 ? "g1.2tb.ai.annual" : "";
+        out.fallback = row.fallback === true;
+      }
       return out;
     }).sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
   }
 
   var scanRaw = load(SCAN_KEY);
   var testRaw = load(TEST_KEY);
+  var matchedFrom = rows(testRaw.matchedFrom, false);
+  var annualHitCount = typeof testRaw.annualHitCount === "number" ? count(testRaw.annualHitCount) :
+    matchedFrom.reduce(function (total, row) {
+      return total + (row.id.indexOf("g1.ios.2tb.") === 0 ? row.count : 0);
+    }, 0);
   var report = {
     schemaVersion: 1,
     storageAvailable: storageAvailable,
@@ -66,12 +77,14 @@
       skus: rows(scanRaw.skus, true)
     },
     test: {
+      version: text(testRaw.version, 32),
       updatedAt: text(testRaw.updatedAt, 32),
       sourcePrefix: "g1.ios.2tb.",
       target: "g1.2tb.ai.annual",
       status: text(testRaw.status, 32),
       hitCount: count(testRaw.hitCount),
-      matchedFrom: rows(testRaw.matchedFrom, false)
+      annualHitCount: annualHitCount,
+      matchedFrom: matchedFrom
     }
   };
 
@@ -96,19 +109,23 @@
   function table(items, withTime) {
     if (!items.length) return "<p>暂无记录。</p>";
     return "<div class=scroll><table><thead><tr><th>完整商品编号</th><th>次数</th>" +
-      (withTime ? "<th>最近发现时间（UTC）</th>" : "") + "</tr></thead><tbody>" +
+      (withTime ? "<th>最近发现时间（UTC）</th>" : "<th>实际目标 SKU</th><th>备用档</th>") + "</tr></thead><tbody>" +
       items.map(function (row) {
         return "<tr><td><code>" + escape(row.id) + "</code></td><td>" + row.count + "</td>" +
-          (withTime ? "<td>" + escape(row.lastSeen) + "</td>" : "") + "</tr>";
+          (withTime ? "<td>" + escape(row.lastSeen) + "</td>" :
+            "<td><code>" + escape(row.to || "未记录") + "</code></td><td>" + (row.fallback ? "75p" : "否") + "</td>") + "</tr>";
       }).join("") + "</tbody></table></div>";
   }
   var statuses = {
     "rewritten": "已执行字符串替换",
-    "no-match": "本次响应未命中 iOS 2TB 前缀",
+    "no-match": "本次响应未命中三档映射中的源商品",
     "non-text": "本次响应没有可处理的文本正文"
   };
   var status = Object.prototype.hasOwnProperty.call(statuses, report.test.status) ?
     statuses[report.test.status] : "暂无测试执行记录";
+  if (report.test.version === "pro-annual-test-v1" && report.test.status === "no-match") {
+    status = "旧 v1 记录：本次响应未命中 iOS 2TB 前缀";
+  }
   var html = [
     "<!doctype html><html lang=zh-CN><meta charset=utf-8>",
     "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Google One SKU 本地报告</title>",
@@ -118,9 +135,9 @@
     "<p><a href=\"" + ROOT + "\">刷新</a><a href=\"" + ROOT + "?format=json\">导出 JSON</a></p>",
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
-    "<section><h2>最近一次 Pro 年付测试</h2>",
-    "<p>状态：" + escape(status) + "；替换次数：" + report.test.hitCount + "</p>",
-    "<p>源前缀：<code>g1.ios.2tb.</code><br>固定目标：<code>g1.2tb.ai.annual</code><br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<section><h2>最近一次三档映射</h2>",
+    "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
+    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>2TB 固定目标：<code>g1.2tb.ai.annual</code><br>20TB / 30TB 沿用旧优惠映射与 75p 回退；各档实际目标见下表。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",

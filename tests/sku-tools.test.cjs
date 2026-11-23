@@ -13,8 +13,14 @@ const REPORT = "https://one.google.com/g1-sku-report";
 // Fixture source IDs test the matching contract; they are not store catalog evidence.
 const SOURCE = "g1.ios.2tb.fixture_monthly";
 const OTHER_SOURCE = "g1.ios.2tb.fixture_annual";
+const TWENTY = "g1.ios.20tb.m.v2";
+const THIRTY = "g1.ios.30tb.ai.pro.m";
+const TWENTY_TARGET = "g1.20tb.3months_ip_90p.acq";
+const THIRTY_TARGET = "g1.ai.ultra.3months_ip_90p.acq";
+const TWENTY_FALLBACK = "g1.20tb.3months_ip_75p.acq";
+const THIRTY_FALLBACK = "g1.ai.ultra.3months_ip_75p.acq";
 const source = Object.fromEntries(
-  ["g1-pro-annual-test.js", "g1-sku-scan.js", "g1-sku-report.js"].map(name =>
+  ["g1-acq.js", "g1-pro-annual-test.js", "g1-sku-scan.js", "g1-sku-report.js"].map(name =>
     [name, fs.readFileSync(path.join(root, name), "utf8")])
 );
 
@@ -58,25 +64,30 @@ function get(storage, key) {
   return JSON.parse(storage.get(key));
 }
 
-test("only complete iOS 2TB tokens are rewritten; 20TB and 30TB remain intact", () => {
+test("combined module maps 2TB, 20TB and 30TB while preserving unrelated full tokens", () => {
   const untouched = [
-    "g1.ios.20tb.m.v2", "g1.ios.30tb.ai.pro.m", "g1.ios.12tb.fixture",
+    "g1.ios.12tb.fixture", TWENTY + ".extra", THIRTY + ".extra",
     "g1.ios.2tbx.fixture", "prefix" + SOURCE, "x." + SOURCE,
     "person@" + SOURCE, "g1.2tb", TARGET
   ];
-  const values = [SOURCE, OTHER_SOURCE, SOURCE, ...untouched];
+  const values = [SOURCE, OTHER_SOURCE, SOURCE, TWENTY, THIRTY, ...untouched];
   const result = run("g1-pro-annual-test.js", { body: JSON.stringify(values) });
-  assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TARGET, TARGET, ...untouched]);
+  assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TARGET, TARGET, TWENTY_TARGET, THIRTY_TARGET, ...untouched]);
   const record = get(result.storage, TEST_KEY);
-  assert.equal(record.hitCount, 3);
+  assert.equal(record.hitCount, 5);
+  assert.equal(record.annualHitCount, 3);
   assert.equal(record.status, "rewritten");
+  assert.equal(record.version, "pro-annual-test-v2");
   assert.deepEqual(record.matchedFrom, [
-    { id: OTHER_SOURCE, count: 1 }, { id: SOURCE, count: 2 }
+    { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false },
+    { id: OTHER_SOURCE, to: TARGET, count: 1, fallback: false },
+    { id: SOURCE, to: TARGET, count: 2, fallback: false },
+    { id: THIRTY, to: THIRTY_TARGET, count: 1, fallback: false }
   ]);
 });
 
-test("empty or missing 2TB matches leave the response unchanged", () => {
-  for (const body of ["", "g1.ios.20tb.m.v2", "g1.ios.30tb.ai.pro.m"]) {
+test("empty responses or responses with no configured sources pass through", () => {
+  for (const body of ["", "g1.ios.100gb.m", "g1.ios.20tb.other", "g1.ios.30tb.other"]) {
     const result = run("g1-pro-annual-test.js", { body });
     assert.deepEqual(result.payload, {});
     assert.equal(get(result.storage, TEST_KEY).status, "no-match");
@@ -86,6 +97,31 @@ test("empty or missing 2TB matches leave the response unchanged", () => {
     assert.deepEqual(result.payload, {});
     assert.equal(get(result.storage, TEST_KEY).status, "non-text");
   }
+});
+
+test("20TB and 30TB fallback results agree with the original v6 across all offer combinations", () => {
+  const offers = [TWENTY_TARGET, THIRTY_TARGET, TWENTY_FALLBACK, THIRTY_FALLBACK];
+  for (let mask = 0; mask < 16; mask++) {
+    const observed = offers.filter((_, index) => mask & (1 << index));
+    const body = JSON.stringify([TWENTY, THIRTY, TWENTY, ...observed]);
+    const legacy = run("g1-acq.js", { body });
+    const combined = run("g1-pro-annual-test.js", { body });
+    assert.equal(combined.payload.body, legacy.payload.body, "offer mask=" + mask);
+    const record = get(combined.storage, TEST_KEY);
+    assert.equal(record.hitCount, 3);
+    assert.equal(record.annualHitCount, 0);
+    assert.equal(record.status, "rewritten");
+  }
+});
+
+test("fallback decisions are independent and the 2TB target stays fixed", () => {
+  const body = JSON.stringify([SOURCE, TWENTY, THIRTY, TWENTY_TARGET, TWENTY_FALLBACK, THIRTY_FALLBACK]);
+  const result = run("g1-pro-annual-test.js", { body });
+  assert.deepEqual(JSON.parse(result.payload.body).slice(0, 3), [TARGET, TWENTY_TARGET, THIRTY_FALLBACK]);
+  const rows = get(result.storage, TEST_KEY).matchedFrom;
+  assert.deepEqual(rows.find(row => row.id === SOURCE), { id: SOURCE, to: TARGET, count: 1, fallback: false });
+  assert.deepEqual(rows.find(row => row.id === TWENTY), { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false });
+  assert.deepEqual(rows.find(row => row.id === THIRTY), { id: THIRTY, to: THIRTY_FALLBACK, count: 1, fallback: true });
 });
 
 test("test script accepts only the agreed query-bearing /ai URL", () => {
@@ -184,6 +220,46 @@ test("report displays captured IDs and test sources without external assets", ()
   assert.equal(payload.response.headers["Cache-Control"], "no-store");
 });
 
+test("report exports each actual target and separates annual hits from total hits", () => {
+  const storage = new Map();
+  run("g1-pro-annual-test.js", {
+    body: JSON.stringify([SOURCE, TWENTY, THIRTY, THIRTY_FALLBACK]), storage
+  });
+  const result = run("g1-sku-report.js", { url: REPORT + "?format=json", storage });
+  const data = JSON.parse(result.payload.response.body).test;
+  assert.equal(data.version, "pro-annual-test-v2");
+  assert.equal(data.hitCount, 3);
+  assert.equal(data.annualHitCount, 1);
+  assert.equal(data.matchedFrom.find(row => row.id === TWENTY).to, TWENTY_TARGET);
+  assert.deepEqual(data.matchedFrom.find(row => row.id === THIRTY), {
+    id: THIRTY, count: 1, to: THIRTY_FALLBACK, fallback: true
+  });
+  const html = run("g1-sku-report.js", { url: REPORT, storage }).payload.response.body;
+  assert(html.includes("最近一次三档映射"));
+  assert(html.includes("其中 2TB：1"));
+  assert(html.includes(TWENTY_TARGET));
+  assert(html.includes(THIRTY_FALLBACK));
+});
+
+test("new report displays existing v1 records with their original 2TB target", () => {
+  const storage = new Map([[TEST_KEY, JSON.stringify({
+    schemaVersion: 1, version: "pro-annual-test-v1", hitCount: 2, status: "rewritten",
+    matchedFrom: [{ id: SOURCE, count: 2 }]
+  })]]);
+  const result = run("g1-sku-report.js", { url: REPORT + "?format=json", storage });
+  const data = JSON.parse(result.payload.response.body).test;
+  assert.equal(data.version, "pro-annual-test-v1");
+  assert.equal(data.hitCount, 2);
+  assert.equal(data.annualHitCount, 2);
+  assert.deepEqual(data.matchedFrom, [{ id: SOURCE, count: 2, to: TARGET, fallback: false }]);
+  storage.set(TEST_KEY, JSON.stringify({
+    schemaVersion: 1, version: "pro-annual-test-v1", hitCount: 0,
+    status: "no-match", matchedFrom: []
+  }));
+  const html = run("g1-sku-report.js", { url: REPORT, storage }).payload.response.body;
+  assert(html.includes("旧 v1 记录：本次响应未命中 iOS 2TB 前缀"));
+});
+
 test("JSON export is limited to report fields and escapes untrusted HTML text", () => {
   const storage = new Map([[SCAN_KEY, JSON.stringify({
     schemaVersion: 1, updatedAt: "<script>fixture</script>", scannedResponses: 1,
@@ -230,7 +306,7 @@ test("modules pin all new scripts to the same release and use expected URL scope
     assert.equal(scripts.length, 2);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert(url.startsWith("https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v1/"));
+      assert(url.startsWith("https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v2/"));
       assert(fs.existsSync(path.join(root, url.split("/").at(-1))));
     }
     assert.match(module, /hostname = %APPEND% one\.google\.com/);
