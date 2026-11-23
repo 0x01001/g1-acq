@@ -147,7 +147,7 @@
     table(report.scan.skus, true),
     "<p>更新时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p></section>",
     "<form method=get action=\"" + ROOT + "\"><button name=clear value=1>清空本工具的采集与测试记录</button></form>",
-    "<p class=note>采集时仅启用 G1 SKU Scan；测试时切换为 G1 Pro Annual Test，并停用旧 G1 ACQ。</p></html>"
+    "<p class=note>采集时仅启用 G1 SKU Scan；测试时仅启用 G1 ACQ，停用采集器和重复的 G1 Pro Annual Test 模块；沿用原地址更新。</p></html>"
   ].join("");
   $done({ response: { status: 200, headers: headers, body: html } });
 })();

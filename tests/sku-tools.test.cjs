@@ -20,7 +20,7 @@ const THIRTY_TARGET = "g1.ai.ultra.3months_ip_90p.acq";
 const TWENTY_FALLBACK = "g1.20tb.3months_ip_75p.acq";
 const THIRTY_FALLBACK = "g1.ai.ultra.3months_ip_75p.acq";
 const source = Object.fromEntries(
-  ["g1-acq.js", "g1-pro-annual-test.js", "g1-sku-scan.js", "g1-sku-report.js"].map(name =>
+  ["g1-acq.js", "tests/fixtures/g1-acq-v6.js", "g1-sku-scan.js", "g1-sku-report.js"].map(name =>
     [name, fs.readFileSync(path.join(root, name), "utf8")])
 );
 
@@ -71,13 +71,13 @@ test("combined module maps 2TB, 20TB and 30TB while preserving unrelated full to
     "person@" + SOURCE, "g1.2tb", TARGET
   ];
   const values = [SOURCE, OTHER_SOURCE, SOURCE, TWENTY, THIRTY, ...untouched];
-  const result = run("g1-pro-annual-test.js", { body: JSON.stringify(values) });
+  const result = run("g1-acq.js", { body: JSON.stringify(values) });
   assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TARGET, TARGET, TWENTY_TARGET, THIRTY_TARGET, ...untouched]);
   const record = get(result.storage, TEST_KEY);
   assert.equal(record.hitCount, 5);
   assert.equal(record.annualHitCount, 3);
   assert.equal(record.status, "rewritten");
-  assert.equal(record.version, "pro-annual-test-v2");
+  assert.equal(record.version, "g1-acq-v7");
   assert.deepEqual(record.matchedFrom, [
     { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false },
     { id: OTHER_SOURCE, to: TARGET, count: 1, fallback: false },
@@ -88,12 +88,12 @@ test("combined module maps 2TB, 20TB and 30TB while preserving unrelated full to
 
 test("empty responses or responses with no configured sources pass through", () => {
   for (const body of ["", "g1.ios.100gb.m", "g1.ios.20tb.other", "g1.ios.30tb.other"]) {
-    const result = run("g1-pro-annual-test.js", { body });
+    const result = run("g1-acq.js", { body });
     assert.deepEqual(result.payload, {});
     assert.equal(get(result.storage, TEST_KEY).status, "no-match");
   }
   for (const body of [undefined, null, 123, {}]) {
-    const result = run("g1-pro-annual-test.js", { body });
+    const result = run("g1-acq.js", { body });
     assert.deepEqual(result.payload, {});
     assert.equal(get(result.storage, TEST_KEY).status, "non-text");
   }
@@ -104,8 +104,8 @@ test("20TB and 30TB fallback results agree with the original v6 across all offer
   for (let mask = 0; mask < 16; mask++) {
     const observed = offers.filter((_, index) => mask & (1 << index));
     const body = JSON.stringify([TWENTY, THIRTY, TWENTY, ...observed]);
-    const legacy = run("g1-acq.js", { body });
-    const combined = run("g1-pro-annual-test.js", { body });
+    const legacy = run("tests/fixtures/g1-acq-v6.js", { body });
+    const combined = run("g1-acq.js", { body });
     assert.equal(combined.payload.body, legacy.payload.body, "offer mask=" + mask);
     const record = get(combined.storage, TEST_KEY);
     assert.equal(record.hitCount, 3);
@@ -116,7 +116,7 @@ test("20TB and 30TB fallback results agree with the original v6 across all offer
 
 test("fallback decisions are independent and the 2TB target stays fixed", () => {
   const body = JSON.stringify([SOURCE, TWENTY, THIRTY, TWENTY_TARGET, TWENTY_FALLBACK, THIRTY_FALLBACK]);
-  const result = run("g1-pro-annual-test.js", { body });
+  const result = run("g1-acq.js", { body });
   assert.deepEqual(JSON.parse(result.payload.body).slice(0, 3), [TARGET, TWENTY_TARGET, THIRTY_FALLBACK]);
   const rows = get(result.storage, TEST_KEY).matchedFrom;
   assert.deepEqual(rows.find(row => row.id === SOURCE), { id: SOURCE, to: TARGET, count: 1, fallback: false });
@@ -130,7 +130,7 @@ test("test script accepts only the agreed query-bearing /ai URL", () => {
     "https://one.google.com/plans?x=1", "https://one.google.com.evil/ai?x=1",
     "http://one.google.com/ai?x=1"
   ]) {
-    const result = run("g1-pro-annual-test.js", { url, body: SOURCE });
+    const result = run("g1-acq.js", { url, body: SOURCE });
     assert.deepEqual(result.payload, {});
     assert.equal(result.storage.size, 0);
   }
@@ -138,13 +138,13 @@ test("test script accepts only the agreed query-bearing /ai URL", () => {
 
 test("storage errors do not prevent a matched response from completing", () => {
   for (const flags of [{ storageAvailable: false }, { storageThrows: true }, { storageWriteFails: true }]) {
-    const result = run("g1-pro-annual-test.js", { body: SOURCE, ...flags });
+    const result = run("g1-acq.js", { body: SOURCE, ...flags });
     assert.equal(result.payload.body, TARGET);
   }
 });
 
 test("test records omit cookies, headers and full response data", () => {
-  const result = run("g1-pro-annual-test.js", { body: JSON.stringify({ sku: SOURCE, email: "private@example.test" }) });
+  const result = run("g1-acq.js", { body: JSON.stringify({ sku: SOURCE, email: "private@example.test" }) });
   const saved = result.storage.get(TEST_KEY);
   assert(!saved.includes("private@example.test"));
   assert(!saved.includes("secret"));
@@ -209,7 +209,7 @@ test("collector passes through on storage failure", () => {
 test("report displays captured IDs and test sources without external assets", () => {
   const storage = new Map();
   run("g1-sku-scan.js", { body: SOURCE, storage });
-  run("g1-pro-annual-test.js", { body: SOURCE, storage });
+  run("g1-acq.js", { body: SOURCE, storage });
   const { payload } = run("g1-sku-report.js", { url: REPORT, storage });
   assert.equal(payload.response.status, 200);
   assert.match(payload.response.body, /Google One SKU 本地报告/);
@@ -222,12 +222,12 @@ test("report displays captured IDs and test sources without external assets", ()
 
 test("report exports each actual target and separates annual hits from total hits", () => {
   const storage = new Map();
-  run("g1-pro-annual-test.js", {
+  run("g1-acq.js", {
     body: JSON.stringify([SOURCE, TWENTY, THIRTY, THIRTY_FALLBACK]), storage
   });
   const result = run("g1-sku-report.js", { url: REPORT + "?format=json", storage });
   const data = JSON.parse(result.payload.response.body).test;
-  assert.equal(data.version, "pro-annual-test-v2");
+  assert.equal(data.version, "g1-acq-v7");
   assert.equal(data.hitCount, 3);
   assert.equal(data.annualHitCount, 1);
   assert.equal(data.matchedFrom.find(row => row.id === TWENTY).to, TWENTY_TARGET);
@@ -299,14 +299,15 @@ test("report handles unavailable storage and skips other URL paths", () => {
   }
 });
 
-test("modules pin all new scripts to the same release and use expected URL scopes", () => {
-  for (const file of ["g1-pro-annual-test.sgmodule", "g1-sku-scan.sgmodule"]) {
+test("stable modules keep main URLs, the original G1 ACQ identity and one shared mapping script", () => {
+  for (const file of ["g1-acq.sgmodule", "g1-pro-annual-test.sgmodule", "g1-sku-scan.sgmodule"]) {
     const module = fs.readFileSync(path.join(root, file), "utf8");
     const scripts = module.split("\n").filter(line => line.includes("script-path="));
     assert.equal(scripts.length, 2);
+    if (file === "g1-acq.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert(url.startsWith("https://cdn.jsdelivr.net/gh/crhywun/g1-acq@pro-annual-test-v2/"));
+      assert(url.startsWith("https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/"));
       assert(fs.existsSync(path.join(root, url.split("/").at(-1))));
     }
     assert.match(module, /hostname = %APPEND% one\.google\.com/);
@@ -315,6 +316,13 @@ test("modules pin all new scripts to the same release and use expected URL scope
     assert(pattern.test("https://one.google.com/ai?x=1"));
     assert(!pattern.test("https://one.google.com.evil/ai?x=1"));
     assert.equal(pattern.test("https://one.google.com/plans"), file === "g1-sku-scan.sgmodule");
-    if (file === "g1-pro-annual-test.sgmodule") assert(!pattern.test("https://one.google.com/ai"));
+    if (file !== "g1-sku-scan.sgmodule") {
+      assert(!pattern.test("https://one.google.com/ai"));
+      assert.equal(responseLine.match(/script-path=([^,\s]+)/)[1],
+        "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.js");
+    }
+    const requestLine = scripts.find(line => line.includes("type=http-request"));
+    assert.equal(requestLine.match(/script-path=([^,\s]+)/)[1],
+      "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-report.js");
   }
 });
