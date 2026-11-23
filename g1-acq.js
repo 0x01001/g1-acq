@@ -2,7 +2,7 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7";
+  var VERSION = "g1-acq-v7.1";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   var TARGET = "g1.2tb.ai.annual";
   var SKU_MAP = {
@@ -13,15 +13,31 @@
     "g1.20tb.3months_ip_90p.acq": "g1.20tb.3months_ip_75p.acq",
     "g1.ai.ultra.3months_ip_90p.acq": "g1.ai.ultra.3months_ip_75p.acq"
   };
-  var STORE_KEY = "g1.pro.annual.test.v1";
+  var TEST_KEY = "g1.pro.annual.test.v1";
+  var SCAN_KEY = "g1.sku.scan.v1";
+  var SCAN_LIMIT = 300;
   var url = typeof $request === "object" && $request ? $request.url : "";
 
-  if (typeof url !== "string" || !/^https:\/\/one\.google\.com\/ai\?/.test(url)) {
+  if (typeof url !== "string" || !/^https:\/\/one\.google\.com\//.test(url) ||
+      /^https:\/\/one\.google\.com\/g1-sku-report\/?(?:\?|$)/.test(url)) {
     $done({});
     return;
   }
 
   var body = typeof $response === "object" && $response ? $response.body : undefined;
+  if (typeof body === "string") {
+    try {
+      collectOriginalSkus(body);
+    } catch (error) {
+      console.log("[g1-acq] SKU collection unavailable");
+    }
+  }
+
+  if (!/^https:\/\/one\.google\.com\/ai\?/.test(url)) {
+    $done({});
+    return;
+  }
+
   var mappings = Object.create(null);
   var hits = 0;
   var annualHits = 0;
@@ -76,7 +92,7 @@
   try {
     if (typeof $persistentStore !== "undefined" &&
         typeof $persistentStore.write === "function") {
-      if (!$persistentStore.write(JSON.stringify(record), STORE_KEY)) {
+      if (!$persistentStore.write(JSON.stringify(record), TEST_KEY)) {
         console.log("[g1-acq] local record write failed");
       }
     }
@@ -90,4 +106,85 @@
       (source.fallback ? " fallback=75p" : ""));
   });
   $done(hits ? { body: out } : {});
+
+  function collectOriginalSkus(originalBody) {
+    var now = new Date().toISOString();
+    var saved = {};
+    try {
+      if (typeof $persistentStore !== "undefined" && typeof $persistentStore.read === "function") {
+        saved = JSON.parse($persistentStore.read(SCAN_KEY) || "{}");
+      }
+    } catch (error) {
+      saved = {};
+    }
+    if (!saved || saved.schemaVersion !== 1) saved = {};
+
+    var byId = Object.create(null);
+    var ids = [];
+    var validId = /^(?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]{1,160}$/;
+    var oldRows = Array.isArray(saved.skus) ? saved.skus : [];
+    oldRows.slice(0, SCAN_LIMIT).forEach(function (row) {
+      if (!row || typeof row.id !== "string" || !validId.test(row.id) || byId[row.id]) return;
+      var count = Number(row.count);
+      byId[row.id] = {
+        id: row.id,
+        count: isFinite(count) && count > 0 ? Math.floor(count) : 0,
+        lastSeen: typeof row.lastSeen === "string" ? row.lastSeen.slice(0, 32) : ""
+      };
+      ids.push(row.id);
+    });
+
+    // Decode escaped dots on a discovery copy before rewriting the original body.
+    var text = originalBody.replace(/\\u002e|\\x2e|&#0*46;|&#x0*2e;|&period;/gi, ".");
+    var token = /(^|[^A-Za-z0-9._@%-])((?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]+)(?=$|[^A-Za-z0-9._-])/g;
+    var match;
+    var found = Object.create(null);
+    var hitCount = 0;
+    var truncated = saved.truncated === true;
+    while ((match = token.exec(text)) !== null) {
+      var id = match[2];
+      if (!validId.test(id)) continue;
+      found[id] = (found[id] || 0) + 1;
+      hitCount += 1;
+      if (!byId[id]) {
+        if (ids.length >= SCAN_LIMIT) {
+          truncated = true;
+          continue;
+        }
+        byId[id] = { id: id, count: 0, lastSeen: now };
+        ids.push(id);
+      }
+      byId[id].count += 1;
+      byId[id].lastSeen = now;
+    }
+
+    function priorCount(value) {
+      var number = Number(value);
+      return isFinite(number) && number > 0 ? Math.floor(number) : 0;
+    }
+    var state = {
+      schemaVersion: 1,
+      version: VERSION,
+      updatedAt: now,
+      scannedResponses: priorCount(saved.scannedResponses) + 1,
+      matchedResponses: priorCount(saved.matchedResponses) + (hitCount > 0 ? 1 : 0),
+      limit: SCAN_LIMIT,
+      truncated: truncated,
+      skus: ids.sort().map(function (id) { return byId[id]; })
+    };
+    var stored = false;
+    try {
+      if (typeof $persistentStore !== "undefined" && typeof $persistentStore.write === "function") {
+        stored = $persistentStore.write(JSON.stringify(state), SCAN_KEY);
+      }
+    } catch (error) {
+      stored = false;
+    }
+
+    console.log("[g1-acq] candidates=" + Object.keys(found).length +
+      " occurrences=" + hitCount + " saved=" + (stored ? "yes" : "no"));
+    Object.keys(found).sort().slice(0, SCAN_LIMIT).forEach(function (id) {
+      console.log("[g1-acq] " + id + " x" + found[id]);
+    });
+  }
 })();

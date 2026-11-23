@@ -3,10 +3,11 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
+  var VERSION = "v7.1.0";
   var SCAN_KEY = "g1.sku.scan.v1";
   var TEST_KEY = "g1.pro.annual.test.v1";
   var url = typeof $request === "object" && $request ? $request.url : "";
-  if (typeof url !== "string" || !/^https:\/\/one\.google\.com\/g1-sku-report(?:\?|$)/.test(url)) {
+  if (typeof url !== "string" || !/^https:\/\/one\.google\.com\/g1-sku-report\/?(?:\?|$)/.test(url)) {
     $done({});
     return;
   }
@@ -67,8 +68,10 @@
     }, 0);
   var report = {
     schemaVersion: 1,
+    reportVersion: VERSION,
     storageAvailable: storageAvailable,
     scan: {
+      version: text(scanRaw.version, 32),
       updatedAt: text(scanRaw.updatedAt, 32),
       scannedResponses: count(scanRaw.scannedResponses),
       matchedResponses: count(scanRaw.matchedResponses),
@@ -91,10 +94,14 @@
   var headers = {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
+    "X-G1-Report-Version": VERSION,
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
   };
-  if (/(?:\?|&)format=json(?:&|$)/.test(url)) {
+  var exportJSON = /(?:\?|&)format=json(?:&|$)/.test(url);
+  console.log("[g1-sku-report] " + VERSION + " " + (exportJSON ? "json" : "html") +
+    " storage=" + (storageAvailable ? "ready" : "unavailable") + " candidates=" + report.scan.skus.length);
+  if (exportJSON) {
     headers["Content-Type"] = "application/json; charset=utf-8";
     headers["Content-Disposition"] = 'attachment; filename="g1-sku-report.json"';
     $done({ response: { status: 200, headers: headers, body: JSON.stringify(report, null, 2) } });
@@ -129,10 +136,12 @@
   var html = [
     "<!doctype html><html lang=zh-CN><meta charset=utf-8>",
     "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Google One SKU 本地报告</title>",
-    "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be;margin-right:18px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}button{font:inherit;padding:8px 14px}</style>",
+    "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge{display:inline-block;background:#e0f4e8;color:#176238;padding:4px 10px;border-radius:8px}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0}.actions form{margin:0}button,.actions a{font:inherit;padding:10px 16px;border:0;border-radius:8px;cursor:pointer;text-decoration:none}.actions a{background:#e4eaf3}.actions button{background:#1259be;color:white}button{background:#e4eaf3;color:#1c2737}</style>",
     "<h1>Google One SKU 本地报告</h1>",
-    "<p class=note>此页由手机上的 Shadowrocket 脚本生成；没有向外发送采集数据。</p>",
-    "<p><a href=\"" + ROOT + "\">刷新</a><a href=\"" + ROOT + "?format=json\">导出 JSON</a></p>",
+    "<p class=badge>本机脚本已接管 · " + VERSION + "</p>",
+    "<nav class=actions aria-label=报告操作><form method=get action=\"" + ROOT + "\"><button type=submit name=format value=json>导出 JSON</button></form><a href=\"" + ROOT + "\">刷新报告</a></nav>",
+    "<p class=note>此页由当前设备的 Shadowrocket 生成；地址栏沿用 one.google.com，采集记录保存在当前设备。</p>",
+    "<p class=note>保持一个 G1 ACQ 模块开启即可：先采集原始响应中的编号，再执行三档改写。</p>",
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
     "<section><h2>最近一次三档映射</h2>",
@@ -142,12 +151,12 @@
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",
     "<p>扫描文本响应：" + report.scan.scannedResponses + "；含候选 SKU 的响应：" + report.scan.matchedResponses + "；累计编号：" + report.scan.skus.length + "</p>",
-    "<p class=note>数据来自 one.google.com 已浏览页面中的字符串，并非商店的完整商品目录；此采集器保持原响应正文。</p>",
+    "<p class=note>编号在改写前从原始响应中提取，并非商店的完整商品目录；脚本生成的替换目标不会自动加入这份清单。</p>",
     report.scan.truncated ? "<p>记录已达到 300 个上限；清空后可重新采集目标页面。</p>" : "",
     table(report.scan.skus, true),
     "<p>更新时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p></section>",
     "<form method=get action=\"" + ROOT + "\"><button name=clear value=1>清空本工具的采集与测试记录</button></form>",
-    "<p class=note>采集时仅启用 G1 SKU Scan；测试时仅启用 G1 ACQ，停用采集器和重复的 G1 Pro Annual Test 模块。</p></html>"
+    "<p class=note>浏览方案后刷新本页查看记录；独立采集器和历史改写副本保持停用，避免重复记录。</p></html>"
   ].join("");
   $done({ response: { status: 200, headers: headers, body: html } });
 })();

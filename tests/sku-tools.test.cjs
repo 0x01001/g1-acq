@@ -77,7 +77,7 @@ test("combined module maps 2TB, 20TB and 30TB while preserving unrelated full to
   assert.equal(record.hitCount, 5);
   assert.equal(record.annualHitCount, 3);
   assert.equal(record.status, "rewritten");
-  assert.equal(record.version, "g1-acq-v7");
+  assert.equal(record.version, "g1-acq-v7.1");
   assert.deepEqual(record.matchedFrom, [
     { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false },
     { id: OTHER_SOURCE, to: TARGET, count: 1, fallback: false },
@@ -124,16 +124,54 @@ test("fallback decisions are independent and the 2TB target stays fixed", () => 
   assert.deepEqual(rows.find(row => row.id === THIRTY), { id: THIRTY, to: THIRTY_FALLBACK, count: 1, fallback: true });
 });
 
-test("test script accepts only the agreed query-bearing /ai URL", () => {
+test("single module collects other Google pages without changing the last mapping record", () => {
   for (const url of [
     "https://one.google.com/ai", "https://one.google.com/ai/other?x=1",
-    "https://one.google.com/plans?x=1", "https://one.google.com.evil/ai?x=1",
-    "http://one.google.com/ai?x=1"
+    "https://one.google.com/plans?x=1"
+  ]) {
+    const previous = JSON.stringify({ schemaVersion: 1, version: "previous-record", hitCount: 2 });
+    const storage = new Map([[TEST_KEY, previous]]);
+    const result = run("g1-acq.js", { url, body: SOURCE, storage });
+    assert.deepEqual(result.payload, {});
+    assert.equal(storage.get(TEST_KEY), previous);
+    assert.equal(get(storage, SCAN_KEY).skus[0].id, SOURCE);
+  }
+  for (const url of [
+    "https://one.google.com.evil/ai?x=1", "http://one.google.com/ai?x=1",
+    REPORT, REPORT + "?format=json", REPORT + "/", REPORT + "/?format=json"
   ]) {
     const result = run("g1-acq.js", { url, body: SOURCE });
     assert.deepEqual(result.payload, {});
     assert.equal(result.storage.size, 0);
   }
+});
+
+test("single module saves original candidates before rewriting without recording generated targets", () => {
+  const body = JSON.stringify([SOURCE, SOURCE, TWENTY, THIRTY, "com.google.one.fixture"]);
+  const result = run("g1-acq.js", { body });
+  assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TARGET, TWENTY_TARGET, THIRTY_TARGET, "com.google.one.fixture"]);
+  const scan = get(result.storage, SCAN_KEY);
+  assert.equal(scan.version, "g1-acq-v7.1");
+  assert.deepEqual(scan.skus.map(row => row.id), ["com.google.one.fixture", TWENTY, SOURCE, THIRTY]);
+  assert.equal(scan.skus.find(row => row.id === SOURCE).count, 2);
+  assert.deepEqual(result.writes, [SCAN_KEY, TEST_KEY]);
+});
+
+test("single-module collection decodes discovery copies and continues mapping when the list is full", () => {
+  const escaped = String.raw`g1\u002eios\u002e2tb\u002eescaped`;
+  const decoded = run("g1-acq.js", { body: escaped });
+  assert.deepEqual(decoded.payload, {});
+  assert.equal(get(decoded.storage, SCAN_KEY).skus[0].id, "g1.ios.2tb.escaped");
+  const storage = new Map();
+  const full = Array.from({ length: 305 }, (_, index) => "g1.fixture." + index).join(" ");
+  run("g1-acq.js", { url: "https://one.google.com/plans", body: full, storage });
+  const next = run("g1-acq.js", { body: SOURCE + " g1.fixture.0", storage });
+  assert.equal(next.payload.body, TARGET + " g1.fixture.0");
+  const scan = get(storage, SCAN_KEY);
+  assert.equal(scan.skus.length, 300);
+  assert.equal(scan.truncated, true);
+  assert.equal(scan.scannedResponses, 2);
+  assert.equal(scan.skus.find(row => row.id === "g1.fixture.0").count, 2);
 });
 
 test("storage errors do not prevent a matched response from completing", () => {
@@ -148,7 +186,9 @@ test("test records omit cookies, headers and full response data", () => {
   const saved = result.storage.get(TEST_KEY);
   assert(!saved.includes("private@example.test"));
   assert(!saved.includes("secret"));
-  assert.deepEqual(result.reads, []);
+  assert.deepEqual(result.reads, [SCAN_KEY]);
+  assert(!result.storage.get(SCAN_KEY).includes("private@example.test"));
+  assert(!result.storage.get(SCAN_KEY).includes("secret"));
 });
 
 test("collector discovers IDs and escaped dots while preserving the response", () => {
@@ -191,6 +231,8 @@ test("collector skips the local report, other domains and nontext bodies", () =>
   for (const options of [
     { url: REPORT, body: SOURCE },
     { url: REPORT + "?format=json", body: SOURCE },
+    { url: REPORT + "/", body: SOURCE },
+    { url: REPORT + "/?format=json", body: SOURCE },
     { url: "https://one.google.com.evil/ai?x=1", body: SOURCE },
     { body: undefined }, { body: new Uint8Array([1, 2]) }
   ]) {
@@ -215,9 +257,32 @@ test("report displays captured IDs and test sources without external assets", ()
   assert.match(payload.response.body, /Google One SKU 本地报告/);
   assert(payload.response.body.includes(SOURCE));
   assert(payload.response.body.includes(TARGET));
-  assert(payload.response.body.includes("?format=json"));
+  assert(payload.response.body.includes("本机脚本已接管 · v7.1.0"));
+  assert.match(payload.response.body, /<button\b[^>]*name=format[^>]*value=json[^>]*>导出 JSON<\/button>/);
   assert(!/<(?:script|img|iframe)\b/i.test(payload.response.body));
   assert.equal(payload.response.headers["Cache-Control"], "no-store");
+});
+
+test("report export form resolves to a JSON attachment and supports a trailing slash", () => {
+  const storage = new Map();
+  run("g1-acq.js", { body: SOURCE, storage });
+  const html = run("g1-sku-report.js", { url: REPORT + "/", storage }).payload.response.body;
+  const action = html.match(/<form method=get action="([^"]+)"><button type=submit name=format value=json>/);
+  assert(action, "the visible export button must submit a GET form");
+  const url = new URL(action[1]);
+  url.searchParams.set("format", "json");
+  assert.equal(url.href, REPORT + "?format=json");
+  for (const exportURL of [url.href, REPORT + "/?format=json"]) {
+    const result = run("g1-sku-report.js", { url: exportURL, storage });
+    assert.equal(result.payload.response.status, 200);
+    assert.equal(result.payload.response.headers["Content-Disposition"], 'attachment; filename="g1-sku-report.json"');
+    assert.equal(result.payload.response.headers["X-G1-Report-Version"], "v7.1.0");
+    const data = JSON.parse(result.payload.response.body);
+    assert.equal(data.reportVersion, "v7.1.0");
+    assert.equal(data.scan.skus[0].id, SOURCE);
+    assert.equal(data.test.matchedFrom[0].to, TARGET);
+    assert(result.logs.some(line => line.includes("[g1-sku-report] v7.1.0 json")));
+  }
 });
 
 test("report exports each actual target and separates annual hits from total hits", () => {
@@ -227,7 +292,7 @@ test("report exports each actual target and separates annual hits from total hit
   });
   const result = run("g1-sku-report.js", { url: REPORT + "?format=json", storage });
   const data = JSON.parse(result.payload.response.body).test;
-  assert.equal(data.version, "g1-acq-v7");
+  assert.equal(data.version, "g1-acq-v7.1");
   assert.equal(data.hitCount, 3);
   assert.equal(data.annualHitCount, 1);
   assert.equal(data.matchedFrom.find(row => row.id === TWENTY).to, TWENTY_TARGET);
@@ -309,7 +374,7 @@ test("the new installer replaces the old entry and all modules share one fixed r
     if (file === "g1-acq-v7.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.0\.0\/[a-z0-9.-]+\.js$/);
+      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.1\.0\/[a-z0-9.-]+\.js$/);
       const base = url.slice(0, url.lastIndexOf("/") + 1);
       if (!scriptBase) scriptBase = base;
       assert.equal(base, scriptBase);
@@ -320,14 +385,21 @@ test("the new installer replaces the old entry and all modules share one fixed r
     const pattern = new RegExp(responseLine.match(/pattern=([^,]+)/)[1]);
     assert(pattern.test("https://one.google.com/ai?x=1"));
     assert(!pattern.test("https://one.google.com.evil/ai?x=1"));
-    assert.equal(pattern.test("https://one.google.com/plans"), file === "g1-sku-scan.sgmodule");
+    assert.equal(pattern.test("https://one.google.com/plans"), file !== "g1-pro-annual-test.sgmodule");
+    assert.equal(pattern.test("https://one.google.com/ai"), file !== "g1-pro-annual-test.sgmodule");
     if (file !== "g1-sku-scan.sgmodule") {
-      assert(!pattern.test("https://one.google.com/ai"));
       assert.equal(responseLine.match(/script-path=([^,\s]+)/)[1],
         scriptBase + "g1-acq.js");
     }
     const requestLine = scripts.find(line => line.includes("type=http-request"));
     assert.equal(requestLine.match(/script-path=([^,\s]+)/)[1],
       scriptBase + "g1-sku-report.js");
+    const reportPattern = new RegExp(requestLine.match(/pattern=([^,]+)/)[1]);
+    for (const url of [REPORT, REPORT + "?format=json", REPORT + "/", REPORT + "/?format=json"]) {
+      assert(reportPattern.test(url));
+    }
+    for (const url of [REPORT + "-other", REPORT + "/other", "https://one.google.com.evil/g1-sku-report"]) {
+      assert(!reportPattern.test(url));
+    }
   }
 });

@@ -8,7 +8,7 @@
   var body = typeof $response === "object" && $response ? $response.body : undefined;
 
   if (typeof url !== "string" || !/^https:\/\/one\.google\.com\//.test(url) ||
-      /^https:\/\/one\.google\.com\/g1-sku-report(?:\?|$)/.test(url) ||
+      /^https:\/\/one\.google\.com\/g1-sku-report\/?(?:\?|$)/.test(url) ||
       typeof body !== "string") {
     $done({});
     return;

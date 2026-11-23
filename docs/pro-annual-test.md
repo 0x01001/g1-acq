@@ -1,22 +1,20 @@
 # Pro 年付测试与 SKU 扫描
 
-**G1 ACQ** 已合并三档改写：把订阅页中实际出现、前缀为 `g1.ios.2tb.` 的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual`，同时保留 20TB / 30TB 优惠映射与各档独立的 75p 回退逻辑。2TB 年付目标没有备用档；20TB / 30TB 的完整源 ID 与目标见第 4 节。当前响应脚本版本为 `g1-acq-v7`，一个 **G1 ACQ** 即可覆盖三档。
+**只安装、开启一个 G1 ACQ**，即可自动采集原始 SKU、执行三档改写并查看本机报告。脚本先采集 `one.google.com/` 原始文字响应中的商品编号，再仅在 `/ai?` 响应中把 `g1.ios.2tb.` 前缀的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual`，同时保留 20TB / 30TB 优惠映射与独立的 75p 回退。2TB 年付没有备用档，完整映射见第 4 节；当前响应脚本版本为 `g1-acq-v7.1`。
 
 `g1.2tb.ai.annual` 在 Google Play 公开记录中对应 Pro、`P1Y`（一年）、`US$199.99`。这条记录只说明 Play 中的商品信息，不确认 iOS 可购买，也不确认 iOS 一折价格。目前已证实匹配逻辑与脚本离线测试，App Store 识别结果、商品名称、周期、初次与续费金额均待实机核对。
 
 ## 1. 删除旧模块，安装新主模块
 
-**G1 ACQ — 原始 iOS 2TB 年付测试，合并 20TB / 30TB 映射**
+**G1 ACQ — 自动采集、三档改写、本机报告与 JSON 导出**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.1.0/g1-acq-v7.sgmodule
 ```
 
-在小火箭模块管理中删除手机上的旧 **G1 ACQ** 模块，再添加上面的唯一新主安装地址并启用；首次安装也使用该地址。模块名仍为 **G1 ACQ**，安装入口与内部响应、报告脚本均固定引用 `@v7.0.0`，无需单独添加脚本。安装后重新连接，再重新打开 Google App 的方案页。
+在小火箭模块管理中删除手机上的旧 **G1 ACQ**，用上面的新链接替换一次并启用；首次安装也使用该地址。模块名仍为 **G1 ACQ**，安装入口与全部内部脚本均固定引用 `@v7.1.0`，无需单独添加脚本。安装后重新连接，再重新打开 Google App 的方案页。
 
-历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；手机上已有这些标签的副本时停用即可。[G1 Pro Annual Test 兼容入口](../g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](../g1-acq.js)，无需另外启用。
-
-测试阶段只启用本次新地址安装的 **G1 ACQ**，停用 **G1 SKU Scan**、**G1 Pro Annual Test**、历史 v1 / v2 副本与其它同页 SKU 改写模块。可选的原始 SKU 采集流程见第 3 节。
+采集和改写在同一个主模块中依次执行，无需另装或切换 **G1 SKU Scan**。只装了一个主模块时，没有额外关闭步骤；若曾安装独立扫描器、**G1 Pro Annual Test** 或其它改写副本，停用这些旧副本，避免重复计数或改写。历史 `v7.0.0`、`pro-annual-test-v1` / `pro-annual-test-v2` 标签保持不动。
 
 主模块包含本地报告脚本，只追加 MITM hostname `one.google.com`，并沿用原有全局 UDP 443 拦截规则；后者也会影响其它 App 的 HTTP/3、速度或连通性。
 
@@ -33,48 +31,34 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
 
 [README 中的配置入口截图](../README.md#安装shadowrocket--小火箭)展示了当前配置右侧的 `(i)` 入口。MITM hostname 覆盖 `one.google.com` 整个域名，脚本读取与改写范围由下文的 URL 匹配限定。
 
-## 3. 可选：采集原始 SKU
+## 3. 浏览方案，自动采集原始 SKU
 
-本节记录手机实际加载页面中出现的编号，作为确定源 ID 的依据；需要采集时添加 **G1 SKU Scan**：
+保持同一个 **G1 ACQ** 开启即可。每次处理 `one.google.com/` 的文字响应时，主脚本先采集原始正文，再检查该响应是否需要三档改写，记录的候选编号不会被本次后续改写替换。
 
-```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
-```
+1. 打开 **Google App（彩色 G 图标）→ Google One 管理**，浏览页面提供的 **2TB / Pro** 方案；核对保留映射时，再浏览实际提供的 **20TB / 30TB** 方案。
+2. 页面提供月付、年付切换时，逐个浏览并等待加载完成。浏览即可产生采集记录，无需完成购买；账号、地区、App 版本决定实际显示的方案与控件。
+3. 保持小火箭连接，在同一手机 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)，核对页面上方的 **本机脚本已接管** 与 **v7.1.0** 标识。
+4. 查看“浏览页面时采集到的候选 SKU”，记录完整编号、次数、最近发现时间。寻找实际出现的 `g1.ios.2tb.` 前缀完整编号；20TB / 30TB 对照第 4 节的两个完整源 ID，不自行补全或猜测后缀。
+5. 点报告操作区的 **导出 JSON** 按钮保存结果，也可直接打开 [JSON 导出地址](https://one.google.com/g1-sku-report?format=json)。
 
-采集模块与内部脚本均固定引用 `@v7.0.0`，并包含同一本地报告页。它与主模块共用两份手机本地记录，切换模块后仍可查看；MITM hostname 与全局 UDP 443 规则和主模块一致。
+自动采集覆盖 `https://one.google.com/` 下的文字响应，跳过 `/g1-sku-report`、末尾带 `/` 的同一路径及其 query。它识别 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计出现次数；同一 ID 在一个响应中重复出现，或在后续响应中再次出现，都会增加次数，次数不是购买次数。
 
-| 阶段 | G1 SKU Scan | G1 ACQ | G1 Pro Annual Test / 历史 v1、v2 副本 / 其它同页 SKU 改写模块 |
-|---|---|---|---|
-| 采集原始 SKU | 开启 | 关闭 | 关闭 |
-| 测试合并三档（含 Pro 年付） | 关闭 | 开启 | 关闭 |
+最多保留 **300 个不同 ID**。达到上限后继续更新已保存 ID 的次数和时间；超出上限的新 ID 不再加入列表，报告页会显示上限提示。需要重新集中采集目标页面时，先导出当前结果，再按第 5 节清空本工具的两份记录。
 
-采集阶段仅开 **G1 SKU Scan**；采集结束后关闭它，再启用新地址安装的 **G1 ACQ** 按第 4 节测试。
-
-1. 停用 **G1 ACQ**、**G1 Pro Annual Test**、历史 v1 / v2 副本与其它 SKU 改写模块，仅启用 **G1 SKU Scan**；切换后重新连接小火箭。
-2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，打开页面提供的 **2TB / Pro** 方案；核对保留映射时，再浏览实际提供的 **20TB / 30TB** 方案。
-3. 页面提供月付、年付切换时，逐个浏览并等待页面加载完成。采集阶段浏览方案即可，无需完成购买；账号、地区、App 版本决定实际显示的方案与控件。
-4. 保持小火箭连接，在同一手机的 Safari 打开 [SKU 本地报告](https://one.google.com/g1-sku-report)。
-5. 查看“浏览页面时采集到的候选 SKU”，记录完整编号、次数、最近发现时间。寻找实际出现的 `g1.ios.2tb.` 前缀完整编号；20TB / 30TB 对照第 4 节的两个完整源 ID，不自行补全或猜测后缀。
-6. 打开 [JSON 导出](https://one.google.com/g1-sku-report?format=json)，保存本轮采集结果。
-
-采集器匹配 `https://one.google.com/` 下的文本响应，跳过自身的 `/g1-sku-report` 精确路径及其 query。它识别 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计出现次数；同一 ID 在一个响应中重复出现，或在后续采集响应中再次出现，都会增加次数，次数不是购买次数。
-
-最多保留 **300 个不同 ID**。达到上限后继续更新已保存 ID 的次数和时间；遇到超出上限的新 ID 时，不再加入列表，并在报告页显示上限提示。需要重新采集目标页面时，先导出当前结果，再按第 5 节清空本工具的两份记录。
-
-采集器会在用于识别的文本副本中还原 `\u002e`、`\x2e` 与 HTML 点号实体。响应正文通过 `$done({})` 原样返回；采集器不读取请求头或请求体，不保存完整响应正文，不查询 App Store，不向外发送采集数据。
+采集会在用于识别的文本副本中还原 `\u002e`、`\x2e` 与 HTML 点号实体；这个还原步骤不修改响应。采集完成后，仅匹配 `/ai?` 的响应进入三档改写，其它响应原样返回。脚本不读取请求头或请求体，不保存完整响应正文，不查询 App Store，不向外发送采集数据。
 
 ## 4. 测试 `g1.2tb.ai.annual` 与 20TB / 30TB 映射
 
-测试阶段关闭采集器，避免把改写后的编号混入原始 SKU 采集结果。
+采集与改写由主模块自动先后执行，核对收银台时继续保持同一个 **G1 ACQ** 开启。
 
-1. 关闭 **G1 SKU Scan**，只启用新地址安装的 **G1 ACQ**；**G1 Pro Annual Test**、历史 v1 / v2 副本和其它同页 SKU 改写模块继续关闭。
+1. 确认新版 **G1 ACQ** 开启与小火箭连接，无需切换采集模块。
 2. 核对当前配置右侧 **(i) → HTTPS 解密** 中的开关、`one.google.com` hostname 和 iOS 证书信任，然后重新连接小火箭。
 3. 退出当前方案页，再从 **Google App（彩色 G）→ Google One 管理** 重新进入 **2TB / Pro** 方案。年付实验的源商品是原始 iOS 2TB；核对保留映射时分别打开页面实际提供的 20TB / 30TB 方案。
 4. 从页面实际提供的方案进入订阅流程，核对 App Store 收银台中的 **商品名称、订阅周期、币种、初次金额、续费金额**。若未拉起收银台，记录屏幕上的实际提示；2TB、20TB、30TB 的结果分别记录。
 5. 在 Safari 打开 [本地报告](https://one.google.com/g1-sku-report)，查看“最近一次三档映射”的版本、执行时间与状态；“总替换次数”是三档总数，“其中 2TB”是年付改写数，下方按行显示完整源编号、实际目标与备用状态。
-6. 打开 [JSON 导出](https://one.google.com/g1-sku-report?format=json)，保留 `test.version`、`test.matchedFrom`、`test.target`、`test.hitCount`、`test.annualHitCount`、`test.status` 与 `test.updatedAt`，将它们和本次 App Store 显示结果一起记录。
+6. 点报告操作区的 **导出 JSON** 按钮，或打开 [JSON 导出地址](https://one.google.com/g1-sku-report?format=json)，保留 `test.version`、`test.matchedFrom`、`test.target`、`test.hitCount`、`test.annualHitCount`、`test.status` 与 `test.updatedAt`，将它们和本次 App Store 显示结果一起记录。
 
-脚本只处理匹配 `^https://one\.google\.com/ai\?` 的响应。在响应原文中先识别完整明文编号，再应用以下三档映射：
+主脚本先从匹配 `^https://one\.google\.com/` 的原始文字响应采集 SKU，再仅对匹配 `^https://one\.google\.com/ai\?` 的响应识别完整明文编号并应用以下映射：
 
 | 正文中的完整源 SKU | 默认目标 | 备用目标 |
 |---|---|---|
@@ -92,7 +76,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
 
 | 报告字段 | 含义 |
 |---|---|
-| `test.version` | 生成该执行记录的脚本版本；当前主脚本为 `g1-acq-v7` |
+| `test.version` | 生成该执行记录的脚本版本；当前主脚本为 `g1-acq-v7.1` |
 | `test.matchedFrom` | 本次响应实际命中的完整源 ID，逐行格式为 `{id, to, count, fallback}`；`to` 是该源本次实际目标，`count` 是该源的改写次数，`fallback=true` 表示 20TB / 30TB 使用对应 75p 备用档 |
 | `test.target` | 仍专指 2TB 年付目标 `g1.2tb.ai.annual`；20TB / 30TB 的实际目标看各行 `to` |
 | `test.hitCount` | 本次响应三档总改写数；脚本输出中的 `hits=N` 对应此值 |
@@ -102,17 +86,17 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
 | `test.status = no-match` | 本次文本响应三档完整源 ID 都未命中，响应原样返回 |
 | `test.status = non-text` | 本次响应没有可处理的文本正文，响应原样返回 |
 
-当前日志使用 `[g1-acq]` 前缀，汇总格式为 `g1-acq-v7 hits=N annualHits=N`，逐行输出 `源 SKU → 实际目标 xN`；20TB / 30TB 选用备用档时，该行附 `fallback=75p`。报告中的 `to` 与逐行日志对应，主汇总的 `hits` 与 `annualHits` 分别对应 `hitCount` 与 `annualHitCount`。
+当前日志使用 `[g1-acq]` 前缀，汇总格式为 `g1-acq-v7.1 hits=N annualHits=N`，逐行输出 `源 SKU → 实际目标 xN`；20TB / 30TB 选用备用档时，该行附 `fallback=75p`。报告中的 `to` 与逐行日志对应，主汇总的 `hits` 与 `annualHits` 分别对应 `hitCount` 与 `annualHitCount`。
 
-这里保存的是**最近一次匹配 URL 的执行记录**，不是累计测试历史；后续零命中响应也会更新记录。核对时对照执行时间，命中次数仅证明文本替换，不证明 App Store 接受目标商品或已完成订阅。
+这里保存的是**最近一次进入三档改写检查的执行记录**，不是累计测试历史；该范围内后续零命中响应也会更新记录。核对时对照执行时间，命中次数仅证明文本替换，不证明 App Store 接受目标商品或已完成订阅。
 
 `hitCount=0` 与 `status=no-match` 表示本次文本响应三档都未命中，不等于账号没有 2TB 商品，也不等于目标商品不存在。若 `annualHitCount=0`、`hitCount>0`，说明只命中了 20TB / 30TB，状态仍为 `rewritten`；判断 2TB 年付实验须看 `annualHitCount`，再对照各行 `id` 与 `to`。
 
-采集器覆盖整个 `one.google.com/`，并可识别转义点号；合并改写仅处理 `/ai?` 原文中的完整明文编号。因此采集页出现候选 ID，不保证另一条 `/ai?` 响应能命中。目标档未命中时切回采集流程取得实际编号，不推测新的 iOS SKU。
+同一个主模块的采集范围覆盖整个 `one.google.com/`，并可识别转义点号；三档改写仅处理 `/ai?` 原文中的完整明文编号。因此报告中出现候选 ID，不保证另一条 `/ai?` 响应能命中。目标档未命中时继续浏览实际提供的方案，按第 3 节查看自动采集到的完整编号，无需切换模块，也不推测新的 iOS SKU。
 
 ## 5. 本地结果页、导出与清理
 
-在小火箭连接且 **G1 ACQ** 或 **G1 SKU Scan** 开启时访问以下地址：
+保持小火箭连接与新版 **G1 ACQ** 开启，在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)。页面上方应显示 **本机脚本已接管** 和 **v7.1.0** 标识，操作区有 **导出 JSON** 按钮；点按钮即可导出，也可使用下面的直接地址：
 
 | 地址 | 动作 |
 |---|---|
@@ -120,7 +104,9 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
 | [导出 JSON](https://one.google.com/g1-sku-report?format=json) | 返回 `g1-sku-report.json` 下载响应 |
 | [清空本工具记录](https://one.google.com/g1-sku-report?clear=1) | 清空本工具的采集记录与最近测试记录 |
 
-结果页由 Shadowrocket 的 `http-request` 脚本拦截 **`https://one.google.com/g1-sku-report` 精确路径及其 query**，在本机生成 HTML 或 JSON 并直接返回，不把这次页面请求交给 Google 处理。HTML 不加载外部资源，结果页和导出脚本没有网络上报调用。
+**地址使用 Google 域名，报告页面由手机本机脚本提供。** Shadowrocket 的 `http-request` 脚本接管 `https://one.google.com/g1-sku-report`，也支持末尾 `/` 和 query，在本机生成 HTML 或 JSON 并直接返回，不把这次请求交给 Google。HTML 不加载外部资源，报告与导出脚本没有网络上报调用。
+
+若看到 Google 普通页面或 404，说明本次没有展示本机报告。核对新版 **G1 ACQ** 开启、小火箭连接、**当前配置 (i) → HTTPS 解密**、`one.google.com` hostname 和 iOS 中已受信任的证书，再把完整报告 URL 粘贴到 Safari 地址栏打开。
 
 数据保存在手机 `$persistentStore` 中，两个键名与 `schemaVersion: 1` 均保持不变：
 
@@ -139,7 +125,7 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 
 | 层级 | 实际方法 | 能确认的内容 |
 |---|---|---|
-| 网页被动采集 | 本仓库 G1 SKU Scan，记录已浏览 `one.google.com/` 响应中的字符串 | 发现候选 ID；不确认商店收录、地区可售或当前账号购买资格 |
+| 网页被动采集 | G1 ACQ 内置自动采集，记录已浏览 `one.google.com/` 原始响应中的字符串 | 发现候选 ID；不确认商店收录、地区可售或当前账号购买资格 |
 | iOS 商品查询 | 在对应 App 上下文中用 StoreKit `Product.products(for:)` 或 `SKProductsRequest` 查询一组已知 ID | 返回该 App 上下文下能取得的商品信息；StoreKit 客户端没有列出该 App 全部商品的接口 |
 | Google Play 商品查询 | 用 Google Play Billing 查询已知商品 ID | 只证明 Play 目录中的商品信息，不等同于 iOS App Store 目录 |
 
@@ -150,7 +136,8 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 | 观察结果 | 下一步 |
 |---|---|
 | 报告页显示“暂无记录” | 核对启用的模块与 HTTPS 解密配置，再从 Google App 重新加载目标方案；以报告中的时间与扫描响应计数判断是否有新数据 |
-| Safari 显示 Google 普通页面或 404，而不是本地报告 | 核对地址是否为精确 `/g1-sku-report` 路径、G1 ACQ 或 G1 SKU Scan 是否开启、小火箭是否连接、当前配置是否解密 `one.google.com` |
+| Safari 显示 Google 普通页面或 404 | 当前未展示本机报告；按第 5 节核对新版 G1 ACQ、连接、当前配置的 HTTPS 解密、`one.google.com` 与受信任证书，将完整报告 URL 粘贴到 Safari 地址栏打开 |
+| 页面没有“本机脚本已接管”、`v7.1.0` 标识或“导出 JSON”按钮 | 核对已按第 1 节替换为新版主模块，再重新打开第 5 节本机报告；直接 JSON 导出地址也列在第 5 节 |
 | 报告页显示本地存储接口暂未就绪 | 页面脚本未取得 `$persistentStore` 读取接口，当前页面不构成采集成功的证据；记录显示结果与小火箭版本 |
 | 扫描响应计数增加，但没有候选 ID | 本次已处理的正文未出现匹配字符串；继续浏览实际提供的 2TB / Pro 与月付、年付页面，不凭空生成 ID |
 | 已采集到 2TB ID，但 `annualHitCount` 为 0 | 对照执行时间、完整源 ID、`g1.ios.2tb.` 前缀与 `/ai?` 匹配范围；按第 3 节重新采集 |
@@ -167,11 +154,13 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 采集 / 测试时间（含时区）：[填写]
 iOS / Google App / Shadowrocket 版本：[填写]
 主模块名称：G1 ACQ
-主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
-主模块发布版本：v7.0.0
-主模块脚本版本：g1-acq-v7
-当前阶段：采集 / 三档合并测试（含 2TB 年付）
-当前启用模块：[填写]
+主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.1.0/g1-acq-v7.sgmodule
+主模块发布版本：v7.1.0
+主模块脚本版本：g1-acq-v7.1
+运行方式：单模块自动采集原始 SKU，再执行三档改写（含 2TB 年付）
+当前启用主模块：G1 ACQ
+报告顶部本机标识与版本：[填写实际显示]
+是否看到并点按“导出 JSON”按钮：[填写]
 Google App 内实际打开的方案名称：[填写 2TB / Pro、20TB 或 30TB 的实际名称]
 采集到的原始 iOS 2TB 完整 SKU：[填写原文；未出现则记“未采集到”]
 采集到的原始 iOS 20TB / 30TB 完整 SKU：[填写原文；未出现则记“未采集到”]
