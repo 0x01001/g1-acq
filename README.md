@@ -6,29 +6,21 @@
 
 Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **Shadowrocket / 小火箭**。
 
-**原地址 G1 ACQ 已合并三档改写：原始 iOS 2TB → `g1.2tb.ai.annual` 年付测试，20TB / 30TB 保留原有优惠映射与独立回退。** 已安装原地址模块的用户直接更新 **G1 ACQ** 并重新连接，无需更换安装 URL 或新建版本模块。当前响应脚本版本为 `g1-acq-v7`，完整采集、测试与实机核对步骤见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
+**G1 ACQ 已合并三档改写：原始 iOS 2TB → `g1.2tb.ai.annual` 年付测试，20TB / 30TB 保留原有优惠映射与独立回退。** 请删除手机上的旧 **G1 ACQ** 模块，添加下方唯一新主安装地址；模块名仍为 **G1 ACQ**。本次发布固定为 `v7.0.0`，响应脚本版本为 `g1-acq-v7`，完整安装、采集与实机核对步骤见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
 
 > 响应中出现商品 ID，只能证明页面携带该字符串，不等于 App Store 商品目录校验。改写命中也不等于商品可购买；商品名称、周期、初次与续费金额须在 App Store 收银台核对，权益以 Google One 账户实际状态为准。
 
-## 原地址更新
+## 主模块安装地址
 
 **G1 ACQ：三档合并改写与本地结果页**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
 ```
 
-已安装该地址时，在小火箭模块管理中更新原 **G1 ACQ**，保持原名称与地址；更新后重新连接，再重新进入 Google App 的订阅页。首次安装也使用上面的同一地址。模块内部响应脚本与本地报告脚本由模块引用已验证提交，更新原模块时同步更新，无需手动处理内部脚本。
+在小火箭模块管理中删除手机上的旧 **G1 ACQ**，再添加上面的新地址并启用；首次安装也使用该地址。模块安装入口与内部响应、报告脚本均固定引用 `@v7.0.0`，无需单独添加脚本；安装后重新连接，再重新进入 Google App 的订阅页。
 
-**G1 SKU Scan：网页 SKU 被动采集**
-
-```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
-```
-
-采集器也使用固定的 `@main` 安装路径更新，内部脚本由模块引用已验证提交，随模块同步更新。它读取 `one.google.com/` 响应中出现的 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计次数，最多保留 300 个 ID；跳过自带结果页，通过 `$done({})` 原样返回响应。手机只保存候选 ID、次数、时间与扫描状态，不查询 App Store，不发网络上报。
-
-历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；手机上已有这些版本的副本时停用即可。主分支 [G1 Pro Annual Test 兼容入口](g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](g1-acq.js)，无需另外启用。
+历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；手机上已有这些版本的副本时停用即可。[G1 Pro Annual Test 兼容入口](g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](g1-acq.js)，无需另外启用。
 
 ## 三档映射
 
@@ -50,27 +42,41 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 
 ![配置页入口：点击 shadowrocket.conf 右侧的 (i) 图标进入配置编辑，才能看到 HTTPS 解密](docs-config-entry.png)
 
-1. 在小火箭模块管理中更新已安装的原地址 **G1 ACQ**；首次安装时添加上面的原地址。采集器按需添加或更新其 `@main` 地址，首页保持 VPN 连接。
+1. 在小火箭模块管理中删除手机上的旧 **G1 ACQ**，添加上面的 `v7.0.0` 新主安装地址并启用，首页保持 VPN 连接。
 2. 从上述当前配置的 **(i)** 入口进入 **HTTPS 解密**，打开解密开关。已有可用且已受信任的 Shadowrocket 证书时直接沿用；尚未配置证书时，在该页生成并安装证书，再完成下两步。
 3. 首次配置证书时，在 iOS **设置 → 通用 → VPN 与设备管理** 中完成 Shadowrocket 描述文件安装。
 4. 首次配置证书时，在 iOS **设置 → 通用 → 关于本机 → 证书信任设置** 中开启对应 Shadowrocket 根证书的信任。
 5. 在当前配置的 **HTTPS 解密 hostname 列表**中核对 `one.google.com`；模块通过 `%APPEND%` 追加该域名。这里是 HTTPS 解密列表，不是 DNS Hosts。
-6. 更新模块、更改模块开关或解密配置后，重新连接小火箭，再重新进入 Google App 的订阅页面。
+6. 安装模块、更改模块开关或解密配置后，重新连接小火箭，再重新进入 Google App 的订阅页面。
 
 ## 手机端使用流程
+
+1. 只启用新地址安装的 **G1 ACQ**，保持 **G1 SKU Scan**、**G1 Pro Annual Test** 与历史 v1 / v2 副本停用，重新连接小火箭。
+2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，进入 **2TB / Pro** 方案进行年付测试；核对保留映射时，再分别打开实际提供的 **20TB / 30TB** 方案。
+3. 进入订阅流程后，核对 App Store 收银台显示的商品名称、周期、初次与续费金额，并从[本地结果页](https://one.google.com/g1-sku-report)核对本次命中记录。
+
+![Google One Ultra 方案选择面板：旧模块的 20TB 方案入口示例](docs-ultra-plans.png)
+
+截图展示 20TB 入口；2TB 年付测试应打开 **2TB / Pro** 方案。账号、地区和版本会影响页面展示，以手机实际提供的方案为准。原生 StoreKit 界面自身不属于网页响应改写范围。
+
+### 可选：采集原始 SKU
+
+需要记录网页中的完整源 ID 时，添加 **G1 SKU Scan**：
+
+```text
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
+```
+
+采集模块与内部脚本均固定引用 `@v7.0.0`。它读取 `one.google.com/` 响应中出现的 `g1.*` 与 `com.google.one.*` 字符串，按 ID 去重累计次数，最多保留 300 个 ID；跳过自带结果页，通过 `$done({})` 原样返回响应。手机只保存候选 ID、次数、时间与扫描状态，不查询 App Store，不发网络上报。
 
 | 阶段 | G1 SKU Scan | G1 ACQ | G1 Pro Annual Test、历史 v1 / v2 副本与其它同页改写模块 |
 |---|---|---|---|
 | 采集原始 SKU | 开启 | 关闭 | 关闭 |
 | 测试三档映射 | 关闭 | 开启 | 关闭 |
 
-1. 采集时仅启用 **G1 SKU Scan**，停用 **G1 ACQ** 与重复改写模块；打开 **Google App（彩色 G 图标）→ Google One 管理**，浏览页面实际提供的方案，再从[本地结果页](https://one.google.com/g1-sku-report)取得完整源 ID。
-2. 测试时关闭 **G1 SKU Scan**，只启用更新后的 **G1 ACQ**，保持 **G1 Pro Annual Test** 与历史 v1 / v2 副本停用，重新连接小火箭。
-3. 重新进入 **2TB / Pro** 方案进行年付测试；核对保留映射时，再分别打开实际提供的 **20TB / 30TB** 方案。进入订阅流程后，核对 App Store 收银台显示的商品名称、周期、初次与续费金额。
-
-![Google One Ultra 方案选择面板：旧模块的 20TB 方案入口示例](docs-ultra-plans.png)
-
-截图展示 20TB 入口；2TB 年付测试应打开 **2TB / Pro** 方案。账号、地区和版本会影响页面展示，以手机实际提供的方案为准。原生 StoreKit 界面自身不属于网页响应改写范围。
+1. 采集时仅启用 **G1 SKU Scan**，停用 **G1 ACQ** 与重复改写模块，重新连接小火箭。
+2. 从 **Google App → Google One 管理** 浏览实际提供的方案，再从[本地结果页](https://one.google.com/g1-sku-report)取得完整源 ID。
+3. 采集完成后关闭 **G1 SKU Scan**，只启用新地址安装的 **G1 ACQ**，重新连接后按上面的测试流程核对。
 
 ## 本地报告与排错
 
@@ -88,7 +94,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 | `源 SKU → 实际目标 xN` | 逐行记录完整源 ID、本次实际目标与该源改写次数 |
 | `fallback=75p` | 该行 20TB / 30TB 使用了正文中出现的对应 75p 备用档 |
 
-若没有新记录，先核对 VPN 连接、模块开关、当前配置的 HTTPS 解密、证书安装与信任、`one.google.com` hostname，再从 Google App 重新打开方案。若仍显示旧版本，在原地址更新模块，内部脚本随模块同步更新；重新连接后以新记录的 `test.version` 或日志核对 `g1-acq-v7`，无需更换安装 URL；缓存处理不包含“清空所有数据”。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
+若没有新记录，先核对 VPN 连接、模块开关、当前配置的 HTTPS 解密、证书安装与信任、`one.google.com` hostname，再从 Google App 重新打开方案，以新记录的 `test.version` 或日志核对 `g1-acq-v7`。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
 
 ## 工作范围与本地存储
 
@@ -103,19 +109,19 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 - **MITM 范围**：模块只追加 `one.google.com`，其全站流量进入解密范围；页面改写受脚本路径限制。证书在设备生成、安装与信任，HTTPS 解密设置属于当前配置。
 - **系统权限**：脚本没有申请定位、相册、通知的调用；使用过程包含小火箭 VPN 连接和 iOS 描述文件、根证书信任配置。
 - **全局规则影响**：模块的 `[Rule]` 拦截全局 UDP 443，促使支持回退的 QUIC 请求改走 TCP，也会影响其它 App 的 HTTP/3 使用、速度或连通性。
-- **版本与存储**：模块安装地址保留 `@main`，内部脚本由模块引用已验证提交，更新原模块时同步更新；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
+- **版本与存储**：本次模块安装入口与全部内部脚本统一固定引用 `@v7.0.0`；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
 
 ## 文件
 
 | 文件 | 用途 |
 |---|---|
-| [g1-acq.sgmodule](g1-acq.sgmodule) | 原地址 G1 ACQ 主模块，三档合并改写与本地结果页 |
+| [g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) | G1 ACQ 新主模块，三档合并改写与本地结果页 |
 | [g1-acq.js](g1-acq.js) | `g1-acq-v7` 响应脚本，完整 SKU 改写、独立回退与本地命中记录 |
 | [g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) | 引用同一主脚本的兼容入口，无需另外启用 |
 | [g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) | 网页 SKU 被动采集模块，附本地结果页 |
 | [g1-sku-scan.js](g1-sku-scan.js) | 候选 ID 去重、计数与时间记录 |
 | [g1-sku-report.js](g1-sku-report.js) | 本机 HTML 结果页、JSON 导出和两键清理 |
-| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 原地址更新、采集、年付实机核对与扫描边界 |
+| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 新主模块安装、可选采集、年付实机核对与扫描边界 |
 
 ## 离线验证
 

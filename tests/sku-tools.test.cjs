@@ -299,16 +299,17 @@ test("report handles unavailable storage and skips other URL paths", () => {
   }
 });
 
-test("the original G1 ACQ identity remains and all modules share one pinned script revision", () => {
+test("the new installer replaces the old entry and all modules share one fixed release", () => {
+  assert.equal(fs.existsSync(path.join(root, "g1-acq.sgmodule")), false);
   let scriptBase;
-  for (const file of ["g1-acq.sgmodule", "g1-pro-annual-test.sgmodule", "g1-sku-scan.sgmodule"]) {
+  for (const file of ["g1-acq-v7.sgmodule", "g1-pro-annual-test.sgmodule", "g1-sku-scan.sgmodule"]) {
     const module = fs.readFileSync(path.join(root, file), "utf8");
     const scripts = module.split("\n").filter(line => line.includes("script-path="));
     assert.equal(scripts.length, 2);
-    if (file === "g1-acq.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
+    if (file === "g1-acq-v7.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@[a-f0-9]{40}\/[a-z0-9.-]+\.js$/);
+      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.0\.0\/[a-z0-9.-]+\.js$/);
       const base = url.slice(0, url.lastIndexOf("/") + 1);
       if (!scriptBase) scriptBase = base;
       assert.equal(base, scriptBase);

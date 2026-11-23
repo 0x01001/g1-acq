@@ -1,43 +1,30 @@
 # Pro 年付测试与 SKU 扫描
 
-原地址 **G1 ACQ** 已合并三档改写：把订阅页中实际出现、前缀为 `g1.ios.2tb.` 的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual`，同时保留 20TB / 30TB 优惠映射与各档独立的 75p 回退逻辑。2TB 年付目标没有备用档；20TB / 30TB 的完整源 ID 与目标见第 4 节。当前响应脚本版本为 `g1-acq-v7`，一个 **G1 ACQ** 即可覆盖三档。
+**G1 ACQ** 已合并三档改写：把订阅页中实际出现、前缀为 `g1.ios.2tb.` 的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual`，同时保留 20TB / 30TB 优惠映射与各档独立的 75p 回退逻辑。2TB 年付目标没有备用档；20TB / 30TB 的完整源 ID 与目标见第 4 节。当前响应脚本版本为 `g1-acq-v7`，一个 **G1 ACQ** 即可覆盖三档。
 
 `g1.2tb.ai.annual` 在 Google Play 公开记录中对应 Pro、`P1Y`（一年）、`US$199.99`。这条记录只说明 Play 中的商品信息，不确认 iOS 可购买，也不确认 iOS 一折价格。目前已证实匹配逻辑与脚本离线测试，App Store 识别结果、商品名称、周期、初次与续费金额均待实机核对。
 
-## 1. 更新原地址模块
+## 1. 删除旧模块，安装新主模块
 
 **G1 ACQ — 原始 iOS 2TB 年付测试，合并 20TB / 30TB 映射**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
 ```
 
-已安装原地址 **G1 ACQ** 的用户直接在小火箭模块管理中更新原模块，更新后重新连接，再重新打开 Google App 的方案页；保持原名称与安装 URL，无需新建版本模块。首次安装也使用上面的同一地址。模块内部响应脚本与本地报告脚本由模块引用已验证提交，更新原模块时同步更新，无需手动处理内部脚本。
+在小火箭模块管理中删除手机上的旧 **G1 ACQ** 模块，再添加上面的唯一新主安装地址并启用；首次安装也使用该地址。模块名仍为 **G1 ACQ**，安装入口与内部响应、报告脚本均固定引用 `@v7.0.0`，无需单独添加脚本。安装后重新连接，再重新打开 Google App 的方案页。
 
-**G1 SKU Scan — 网页 SKU 被动采集**
+历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；手机上已有这些标签的副本时停用即可。[G1 Pro Annual Test 兼容入口](../g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](../g1-acq.js)，无需另外启用。
 
-```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
-```
+测试阶段只启用本次新地址安装的 **G1 ACQ**，停用 **G1 SKU Scan**、**G1 Pro Annual Test**、历史 v1 / v2 副本与其它同页 SKU 改写模块。可选的原始 SKU 采集流程见第 3 节。
 
-采集器也沿用上面的固定 `@main` 安装路径更新，内部脚本由模块引用已验证提交，随模块同步更新。历史 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保留且不移动；已有这些标签的副本时停用即可，当前更新流程使用原 **G1 ACQ** 地址。主分支 [G1 Pro Annual Test 兼容入口](../g1-pro-annual-test.sgmodule) 引用同一 [g1-acq.js](../g1-acq.js)，无需另外启用。
-
-**G1 ACQ** 与 **G1 SKU Scan** 都包含本地报告脚本。为区分原始页面与改写结果，分阶段启用：
-
-| 阶段 | G1 SKU Scan | G1 ACQ | G1 Pro Annual Test / 历史 v1、v2 副本 / 其它同页 SKU 改写模块 |
-|---|---|---|---|
-| 采集原始 SKU | 开启 | 关闭 | 关闭 |
-| 测试合并三档（含 Pro 年付） | 关闭 | 开启 | 关闭 |
-
-采集阶段仅开 **G1 SKU Scan**，停用 **G1 ACQ** 与其它 SKU 改写模块；测试阶段仅开更新后的 **G1 ACQ**，停用 **G1 SKU Scan**、**G1 Pro Annual Test** 与历史 v1 / v2 副本，避免重复处理。
-
-模块共用两份手机本地记录，切换模块后仍可打开同一结果页查看。两个模块均只追加 MITM hostname `one.google.com`，并沿用原有全局 UDP 443 拦截规则；后者也会影响其它 App 的 HTTP/3、速度或连通性。
+主模块包含本地报告脚本，只追加 MITM hostname `one.google.com`，并沿用原有全局 UDP 443 拦截规则；后者也会影响其它 App 的 HTTP/3、速度或连通性。
 
 ## 2. 配置 HTTPS 解密
 
 模块要处理 HTTPS 响应，需在当前使用的配置中启用解密并信任证书。
 
-1. 在小火箭模块管理中更新已安装的原地址 **G1 ACQ**；首次安装时添加上面的原地址。采集器按需添加或更新其 `@main` 地址，按当前阶段只启用对应模块，保持小火箭 VPN 连接。
+1. 确认手机旧 **G1 ACQ** 已删除，启用第 1 节新地址安装的 **G1 ACQ**，保持小火箭 VPN 连接。
 2. 进入 **配置页 → 当前使用配置右侧的 (i) 图标 → HTTPS 解密**，打开解密开关。
 3. 已有可用且已受信任的 Shadowrocket 证书时直接沿用；尚未配置证书时，在该页生成并安装证书，再前往 iOS **设置 → 通用 → VPN 与设备管理** 完成描述文件安装。
 4. 首次配置证书时，前往 iOS **设置 → 通用 → 关于本机 → 证书信任设置**，开启对应 Shadowrocket 根证书的信任。
@@ -46,9 +33,22 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 
 [README 中的配置入口截图](../README.md#安装shadowrocket--小火箭)展示了当前配置右侧的 `(i)` 入口。MITM hostname 覆盖 `one.google.com` 整个域名，脚本读取与改写范围由下文的 URL 匹配限定。
 
-## 3. 先采集原始 SKU
+## 3. 可选：采集原始 SKU
 
-被动采集记录手机实际加载页面中出现的编号，作为确定源 ID 的依据。
+本节记录手机实际加载页面中出现的编号，作为确定源 ID 的依据；需要采集时添加 **G1 SKU Scan**：
+
+```text
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-sku-scan.sgmodule
+```
+
+采集模块与内部脚本均固定引用 `@v7.0.0`，并包含同一本地报告页。它与主模块共用两份手机本地记录，切换模块后仍可查看；MITM hostname 与全局 UDP 443 规则和主模块一致。
+
+| 阶段 | G1 SKU Scan | G1 ACQ | G1 Pro Annual Test / 历史 v1、v2 副本 / 其它同页 SKU 改写模块 |
+|---|---|---|---|
+| 采集原始 SKU | 开启 | 关闭 | 关闭 |
+| 测试合并三档（含 Pro 年付） | 关闭 | 开启 | 关闭 |
+
+采集阶段仅开 **G1 SKU Scan**；采集结束后关闭它，再启用新地址安装的 **G1 ACQ** 按第 4 节测试。
 
 1. 停用 **G1 ACQ**、**G1 Pro Annual Test**、历史 v1 / v2 副本与其它 SKU 改写模块，仅启用 **G1 SKU Scan**；切换后重新连接小火箭。
 2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，打开页面提供的 **2TB / Pro** 方案；核对保留映射时，再浏览实际提供的 **20TB / 30TB** 方案。
@@ -63,11 +63,11 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-sku-scan.sgmodule
 
 采集器会在用于识别的文本副本中还原 `\u002e`、`\x2e` 与 HTML 点号实体。响应正文通过 `$done({})` 原样返回；采集器不读取请求头或请求体，不保存完整响应正文，不查询 App Store，不向外发送采集数据。
 
-## 4. 再测试 `g1.2tb.ai.annual` 与 20TB / 30TB 映射
+## 4. 测试 `g1.2tb.ai.annual` 与 20TB / 30TB 映射
 
 测试阶段关闭采集器，避免把改写后的编号混入原始 SKU 采集结果。
 
-1. 关闭 **G1 SKU Scan**，只启用更新后的原 **G1 ACQ**；**G1 Pro Annual Test**、历史 v1 / v2 副本和其它同页 SKU 改写模块继续关闭。
+1. 关闭 **G1 SKU Scan**，只启用新地址安装的 **G1 ACQ**；**G1 Pro Annual Test**、历史 v1 / v2 副本和其它同页 SKU 改写模块继续关闭。
 2. 核对当前配置右侧 **(i) → HTTPS 解密** 中的开关、`one.google.com` hostname 和 iOS 证书信任，然后重新连接小火箭。
 3. 退出当前方案页，再从 **Google App（彩色 G）→ Google One 管理** 重新进入 **2TB / Pro** 方案。年付实验的源商品是原始 iOS 2TB；核对保留映射时分别打开页面实际提供的 20TB / 30TB 方案。
 4. 从页面实际提供的方案进入订阅流程，核对 App Store 收银台中的 **商品名称、订阅周期、币种、初次金额、续费金额**。若未拉起收银台，记录屏幕上的实际提示；2TB、20TB、30TB 的结果分别记录。
@@ -133,7 +133,7 @@ HTML 按命中行显示完整源 ID、实际目标、次数与备用状态，避
 
 JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastSeen`；测试字段见第 4 节。导出还包含必要的版本、存储状态与统计字段，不包含请求头、请求体或完整响应正文。
 
-`?clear=1` 只清空上述两个键的内容，不执行小火箭“清空所有数据”，也不作为脚本缓存刷新步骤。清空后返回不带 `clear=1` 的[本地报告地址](https://one.google.com/g1-sku-report)，避免刷新清理地址时再次清除新记录。
+`?clear=1` 只清空上述两个键的内容，不执行小火箭“清空所有数据”。清空后返回不带 `clear=1` 的[本地报告地址](https://one.google.com/g1-sku-report)，避免刷新清理地址时再次清除新记录。
 
 ## 6. “扫描 SKU”的三个层级
 
@@ -150,7 +150,6 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 | 观察结果 | 下一步 |
 |---|---|
 | 报告页显示“暂无记录” | 核对启用的模块与 HTTPS 解密配置，再从 Google App 重新加载目标方案；以报告中的时间与扫描响应计数判断是否有新数据 |
-| 测试后仍显示旧脚本版本 | 在原地址更新 G1 ACQ 模块，内部脚本随模块同步更新；重新连接后重开方案页，以新记录的 `test.version` 或日志核对 `g1-acq-v7`，保持原安装 URL |
 | Safari 显示 Google 普通页面或 404，而不是本地报告 | 核对地址是否为精确 `/g1-sku-report` 路径、G1 ACQ 或 G1 SKU Scan 是否开启、小火箭是否连接、当前配置是否解密 `one.google.com` |
 | 报告页显示本地存储接口暂未就绪 | 页面脚本未取得 `$persistentStore` 读取接口，当前页面不构成采集成功的证据；记录显示结果与小火箭版本 |
 | 扫描响应计数增加，但没有候选 ID | 本次已处理的正文未出现匹配字符串；继续浏览实际提供的 2TB / Pro 与月付、年付页面，不凭空生成 ID |
@@ -168,7 +167,8 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 采集 / 测试时间（含时区）：[填写]
 iOS / Google App / Shadowrocket 版本：[填写]
 主模块名称：G1 ACQ
-主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@main/g1-acq.sgmodule
+主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.0.0/g1-acq-v7.sgmodule
+主模块发布版本：v7.0.0
 主模块脚本版本：g1-acq-v7
 当前阶段：采集 / 三档合并测试（含 2TB 年付）
 当前启用模块：[填写]
