@@ -2,10 +2,10 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.4";
+  var VERSION = "g1-acq-v7.5";
   var SOURCE_PREFIX = "g1.ios.2tb.";
-  // User-specified annual candidate; store metadata is still unverified.
-  var TARGET = "g1.2tb.ai.annual_ip_90p.acq";
+  // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
+  var TARGET = "g1.2tb.ai.12months_ip_90p";
   var SKU_MAP = {
     "g1.ios.20tb.m.v2": "g1.20tb.3months_ip_90p.acq",
     "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.3months_ip_90p.acq"
@@ -86,6 +86,7 @@
     target: TARGET,
     targetOrigin: "user-specified",
     hitCount: hits,
+    // Legacy field name: counts 2TB/Pro rewrites, not the billing interval.
     annualHitCount: annualHits,
     matchedFrom: sources,
     status: typeof body !== "string" ? "non-text" : hits ? "rewritten" : "no-match"
