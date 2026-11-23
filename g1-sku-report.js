@@ -1,0 +1,136 @@
+/* Local-only report served by a Shadowrocket http-request script. */
+"use strict";
+
+(function () {
+  var ROOT = "https://one.google.com/g1-sku-report";
+  var SCAN_KEY = "g1.sku.scan.v1";
+  var TEST_KEY = "g1.pro.annual.test.v1";
+  var url = typeof $request === "object" && $request ? $request.url : "";
+  if (typeof url !== "string" || !/^https:\/\/one\.google\.com\/g1-sku-report(?:\?|$)/.test(url)) {
+    $done({});
+    return;
+  }
+
+  var storageAvailable = typeof $persistentStore !== "undefined" &&
+    typeof $persistentStore.read === "function";
+  var clearMessage = "";
+  if (/(?:\?|&)clear=1(?:&|$)/.test(url)) {
+    try {
+      var scanCleared = $persistentStore.write("{}", SCAN_KEY);
+      var testCleared = $persistentStore.write("{}", TEST_KEY);
+      clearMessage = scanCleared && testCleared ? "本工具的两份本地记录已清空。" : "本地记录清空未完成。";
+    } catch (error) {
+      clearMessage = "本地存储接口暂未就绪。";
+    }
+  }
+
+  function load(key) {
+    if (!storageAvailable) return {};
+    try {
+      var value = JSON.parse($persistentStore.read(key) || "{}");
+      return value && value.schemaVersion === 1 ? value : {};
+    } catch (error) {
+      return {};
+    }
+  }
+  function text(value, length) {
+    return typeof value === "string" ? value.slice(0, length || 180) : "";
+  }
+  function count(value) {
+    var number = Number(value);
+    return isFinite(number) && number > 0 ? Math.floor(number) : 0;
+  }
+  function rows(value, withTime) {
+    if (!Array.isArray(value)) return [];
+    return value.slice(0, 300).filter(function (row) {
+      return row && typeof row.id === "string" &&
+        /^(?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]{1,160}$/.test(row.id);
+    }).map(function (row) {
+      var out = { id: row.id, count: count(row.count) };
+      if (withTime) out.lastSeen = text(row.lastSeen, 32);
+      return out;
+    }).sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+  }
+
+  var scanRaw = load(SCAN_KEY);
+  var testRaw = load(TEST_KEY);
+  var report = {
+    schemaVersion: 1,
+    storageAvailable: storageAvailable,
+    scan: {
+      updatedAt: text(scanRaw.updatedAt, 32),
+      scannedResponses: count(scanRaw.scannedResponses),
+      matchedResponses: count(scanRaw.matchedResponses),
+      truncated: scanRaw.truncated === true,
+      limit: 300,
+      skus: rows(scanRaw.skus, true)
+    },
+    test: {
+      updatedAt: text(testRaw.updatedAt, 32),
+      sourcePrefix: "g1.ios.2tb.",
+      target: "g1.2tb.ai.annual",
+      status: text(testRaw.status, 32),
+      hitCount: count(testRaw.hitCount),
+      matchedFrom: rows(testRaw.matchedFrom, false)
+    }
+  };
+
+  var headers = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+  };
+  if (/(?:\?|&)format=json(?:&|$)/.test(url)) {
+    headers["Content-Type"] = "application/json; charset=utf-8";
+    headers["Content-Disposition"] = 'attachment; filename="g1-sku-report.json"';
+    $done({ response: { status: 200, headers: headers, body: JSON.stringify(report, null, 2) } });
+    return;
+  }
+
+  function escape(value) {
+    return String(value).replace(/[&<>"']/g, function (character) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character];
+    });
+  }
+  function table(items, withTime) {
+    if (!items.length) return "<p>暂无记录。</p>";
+    return "<div class=scroll><table><thead><tr><th>完整商品编号</th><th>次数</th>" +
+      (withTime ? "<th>最近发现时间（UTC）</th>" : "") + "</tr></thead><tbody>" +
+      items.map(function (row) {
+        return "<tr><td><code>" + escape(row.id) + "</code></td><td>" + row.count + "</td>" +
+          (withTime ? "<td>" + escape(row.lastSeen) + "</td>" : "") + "</tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  var statuses = {
+    "rewritten": "已执行字符串替换",
+    "no-match": "本次响应未命中 iOS 2TB 前缀",
+    "non-text": "本次响应没有可处理的文本正文"
+  };
+  var status = Object.prototype.hasOwnProperty.call(statuses, report.test.status) ?
+    statuses[report.test.status] : "暂无测试执行记录";
+  var html = [
+    "<!doctype html><html lang=zh-CN><meta charset=utf-8>",
+    "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Google One SKU 本地报告</title>",
+    "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be;margin-right:18px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}button{font:inherit;padding:8px 14px}</style>",
+    "<h1>Google One SKU 本地报告</h1>",
+    "<p class=note>此页由手机上的 Shadowrocket 脚本生成；没有向外发送采集数据。</p>",
+    "<p><a href=\"" + ROOT + "\">刷新</a><a href=\"" + ROOT + "?format=json\">导出 JSON</a></p>",
+    clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
+    storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
+    "<section><h2>最近一次 Pro 年付测试</h2>",
+    "<p>状态：" + escape(status) + "；替换次数：" + report.test.hitCount + "</p>",
+    "<p>源前缀：<code>g1.ios.2tb.</code><br>固定目标：<code>g1.2tb.ai.annual</code><br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
+    table(report.test.matchedFrom, false), "</section>",
+    "<section><h2>浏览页面时采集到的候选 SKU</h2>",
+    "<p>扫描文本响应：" + report.scan.scannedResponses + "；含候选 SKU 的响应：" + report.scan.matchedResponses + "；累计编号：" + report.scan.skus.length + "</p>",
+    "<p class=note>数据来自 one.google.com 已浏览页面中的字符串，并非商店的完整商品目录；此采集器保持原响应正文。</p>",
+    report.scan.truncated ? "<p>记录已达到 300 个上限；清空后可重新采集目标页面。</p>" : "",
+    table(report.scan.skus, true),
+    "<p>更新时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p></section>",
+    "<form method=get action=\"" + ROOT + "\"><button name=clear value=1>清空本工具的采集与测试记录</button></form>",
+    "<p class=note>采集时仅启用 G1 SKU Scan；测试时切换为 G1 Pro Annual Test，并停用旧 G1 ACQ。</p></html>"
+  ].join("");
+  $done({ response: { status: 200, headers: headers, body: html } });
+})();
