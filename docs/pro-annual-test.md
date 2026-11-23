@@ -1,20 +1,20 @@
 # Pro 年付测试与 SKU 扫描
 
-**只安装、开启一个 G1 ACQ**，即可自动采集原始 SKU、执行三档改写并查看本机报告。脚本先采集 `one.google.com/` 原始文字响应中的商品编号，再仅在 `/ai?` 响应中把 `g1.ios.2tb.` 前缀的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual.3months_ip_90p.acq`，同时保留 20TB / 30TB 优惠映射与独立的 75p 回退。2TB 使用固定候选且没有备用档，完整映射见第 4 节；当前响应脚本版本为 `g1-acq-v7.2`。
+**只安装、开启一个 G1 ACQ**，即可自动采集原始 SKU、执行三档改写并查看本机报告。脚本先采集 `one.google.com/` 原始文字响应中的商品编号，再仅在 `/ai?` 响应中把 `g1.ios.2tb.` 前缀的 **原始 iOS 2TB 完整 SKU** 改为 `g1.2tb.ai.annual_ip_90p.acq`，同时保留 20TB / 30TB 优惠映射与独立的 75p 回退。2TB 使用用户指定的固定候选且没有备用档，完整映射见第 4 节；当前响应脚本版本为 `g1-acq-v7.3`。
 
-**候选来自机械拼接：** 原始年付商品 `g1.2tb.ai.annual` + 现有一折命名后缀 `.3months_ip_90p.acq`。候选的商店识别、年付周期与一折价格均未验证，后缀里的 `3months` 也不证明实际周期。原始商品的 [Google Play 记录](https://github.com/catteadogcar/google-one-tools/blob/91dc6315257ee4c83b8a097c4a2fcece3defe9db/scan_result_us.json#L673)（2026-11-21，标题 Google AI Pro 5TB）标注 `P1Y`（一年）、`US$199.99`；这些信息只属于原始商品，不是候选详情。离线测试验证字符串匹配与报告行为，App Store 识别结果、商品名称、周期、初次与续费金额均待实机核对。
+**本轮测试的完整候选为 `g1.2tb.ai.annual_ip_90p.acq`，年付段为 `annual`，优惠后缀为 `_ip_90p.acq`。** 操作环境是 iPhone 上的 Shadowrocket 与 Google App；候选名称、周期、初次与续费金额待 App Store 实际返回商品后核对。离线测试验证字符串匹配与报告行为。
 
 ## 1. 删除旧模块，安装新主模块
 
 **G1 ACQ — 自动采集、三档改写、本机报告与 JSON 导出**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
 ```
 
-在小火箭模块管理中删除手机上的旧 **G1 ACQ**，用上面的新链接替换一次并启用；首次安装也使用该地址。模块名仍为 **G1 ACQ**，安装入口与全部内部脚本均固定引用 `@v7.2.0`，无需单独添加脚本。安装后重新连接，再重新打开 Google App 的方案页。
+在小火箭模块管理中删除手机上的旧 **G1 ACQ**，用上面的新链接替换一次并启用；首次安装也使用该地址。模块名仍为 **G1 ACQ**，安装入口与全部内部脚本均固定引用 `@v7.3.0`，无需单独添加脚本。安装后重新连接，再重新打开 Google App 的方案页。
 
-采集和改写在同一个主模块中依次执行，无需另装或切换 **G1 SKU Scan**。只装了一个主模块时，没有额外关闭步骤；若曾安装独立扫描器、**G1 Pro Annual Test** 或其它改写副本，停用这些旧副本，避免重复计数或改写。历史 `v7.0.0` / `v7.1.0`、`pro-annual-test-v1` / `pro-annual-test-v2` 标签保持不动。
+采集和改写在同一个主模块中依次执行，无需另装或切换 **G1 SKU Scan**。只装了一个主模块时，没有额外关闭步骤；若曾安装独立扫描器、**G1 Pro Annual Test** 或其它改写副本，停用这些旧副本，避免重复计数或改写。历史 `v7.0.0` / `v7.1.0` / `v7.2.0`、`pro-annual-test-v1` / `pro-annual-test-v2` 标签保持不动。
 
 主模块包含本地报告脚本，只追加 MITM hostname `one.google.com`，并沿用原有全局 UDP 443 拦截规则；后者也会影响其它 App 的 HTTP/3、速度或连通性。
 
@@ -37,7 +37,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 
 1. 打开 **Google App（彩色 G 图标）→ Google One 管理**，浏览页面提供的 **2TB / Pro** 方案；核对保留映射时，再浏览实际提供的 **20TB / 30TB** 方案。
 2. 页面提供月付、年付切换时，逐个浏览并等待加载完成。浏览即可产生采集记录，无需完成购买；账号、地区、App 版本决定实际显示的方案与控件。
-3. 保持小火箭连接，在同一手机 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)，核对页面上方的 **本机脚本已接管** 与 **v7.2.0** 标识。
+3. 保持小火箭连接，在同一手机 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)，核对页面上方的 **本机脚本已接管** 与 **v7.3.0** 标识。
 4. 查看“浏览页面时采集到的候选 SKU”，记录完整编号、次数、最近发现时间。寻找实际出现的 `g1.ios.2tb.` 前缀完整编号；20TB / 30TB 对照第 4 节的两个完整源 ID，不自行补全或猜测后缀。
 5. 点报告操作区的 **导出 JSON** 按钮保存结果，也可直接打开 [JSON 导出地址](https://one.google.com/g1-sku-report?format=json)。
 
@@ -47,7 +47,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 
 采集会在用于识别的文本副本中还原 `\u002e`、`\x2e` 与 HTML 点号实体；这个还原步骤不修改响应。采集完成后，仅匹配 `/ai?` 的响应进入三档改写，其它响应原样返回。脚本不读取请求头或请求体，不保存完整响应正文，不查询 App Store，不向外发送采集数据。
 
-## 4. 测试一折年付候选与 20TB / 30TB 映射
+## 4. 测试 annual_ip_90p.acq 候选与 20TB / 30TB 映射
 
 采集与改写由主模块自动先后执行，核对收银台时继续保持同一个 **G1 ACQ** 开启。
 
@@ -62,11 +62,11 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 
 | 正文中的完整源 SKU | 默认目标 | 备用目标 |
 |---|---|---|
-| `g1.ios.2tb.` 前缀的完整 SKU | `g1.2tb.ai.annual.3months_ip_90p.acq`（按规则推导的候选） | 无 |
+| `g1.ios.2tb.` 前缀的完整 SKU | `g1.2tb.ai.annual_ip_90p.acq`（用户指定候选） | 无 |
 | `g1.ios.20tb.m.v2` | `g1.20tb.3months_ip_90p.acq` | `g1.20tb.3months_ip_75p.acq` |
 | `g1.ios.30tb.ai.pro.m` | `g1.ai.ultra.3months_ip_90p.acq` | `g1.ai.ultra.3months_ip_75p.acq` |
 
-2TB 匹配到的完整源 ID 固定替换为候选 `g1.2tb.ai.annual.3months_ip_90p.acq`，没有备用目标，也不要求目标预先出现在正文中。20TB / 30TB 必须命中表中的完整源 ID，各档独立按原始响应正文决定目标，保留原有判断：
+2TB 匹配到的完整源 ID 固定替换为候选 `g1.2tb.ai.annual_ip_90p.acq`，没有备用目标，也不要求目标预先出现在正文中。20TB / 30TB 必须命中表中的完整源 ID，各档独立按原始响应正文决定目标，保留原有判断：
 
 - 默认 90p 目标出现在正文中时，使用 90p；即使对应 75p 也出现，仍优先 90p。
 - 默认 90p 目标未出现、对应 75p 备用目标出现时，使用该档的 75p，记录 `fallback=true`。
@@ -76,12 +76,12 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 
 | 报告字段 | 含义 |
 |---|---|
-| `reportVersion` | 当前报告脚本版本 `v7.2.0`，与保存的执行记录版本分别显示 |
-| `configuredTarget` | 当前配置的 2TB 候选 `g1.2tb.ai.annual.3months_ip_90p.acq` |
-| `test.version` | 生成该执行记录的脚本版本；当前主脚本为 `g1-acq-v7.2`，保留的旧记录仍显示原版本 |
+| `reportVersion` | 当前报告脚本版本 `v7.3.0`，与保存的执行记录版本分别显示 |
+| `configuredTarget` | 当前配置的 2TB 候选 `g1.2tb.ai.annual_ip_90p.acq` |
+| `test.version` | 生成该执行记录的脚本版本；当前主脚本为 `g1-acq-v7.3`，保留的旧记录仍显示原版本 |
 | `test.matchedFrom` | 本次响应实际命中的完整源 ID，逐行格式为 `{id, to, count, fallback}`；`to` 是该源本次实际目标，`count` 是该源的改写次数，`fallback=true` 表示 20TB / 30TB 使用对应 75p 备用档 |
-| `test.target` | 最近一次执行时保存的 2TB 目标；新记录为候选，旧 v1 / v7.1 记录仍为 `g1.2tb.ai.annual`；20TB / 30TB 的实际目标看各行 `to` |
-| `test.targetOrigin` | 新候选记录为 `pattern-derived`，旧普通年付记录为 `legacy`，无执行记录时为空 |
+| `test.target` | 最近一次执行时实际保存的 2TB 目标；新记录为 `g1.2tb.ai.annual_ip_90p.acq`，旧 v7.2 记录保留 `g1.2tb.ai.annual.3months_ip_90p.acq`，旧 v1 / v7.1 记录仍为 `g1.2tb.ai.annual`；20TB / 30TB 的实际目标看各行 `to` |
+| `test.targetOrigin` | 新候选记录为 `user-specified`，旧 v7.2 记录保留 `pattern-derived`，旧 v1 / v7.1 普通年付记录为 `legacy`，无执行记录时为空 |
 | `test.hitCount` | 本次响应三档总改写数；脚本输出中的 `hits=N` 对应此值 |
 | `test.annualHitCount` | 本次响应仅 2TB 年付改写数；脚本输出中的 `annualHits=N` 对应此值 |
 | `test.updatedAt` | 最近一次执行时间，UTC |
@@ -89,9 +89,9 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 | `test.status = no-match` | 本次文本响应三档完整源 ID 都未命中，响应原样返回 |
 | `test.status = non-text` | 本次响应没有可处理的文本正文，响应原样返回 |
 
-当前日志使用 `[g1-acq]` 前缀，汇总格式为 `g1-acq-v7.2 hits=N annualHits=N`，逐行输出 `源 SKU → 实际目标 xN`；20TB / 30TB 选用备用档时，该行附 `fallback=75p`。报告中的 `to` 与逐行日志对应，主汇总的 `hits` 与 `annualHits` 分别对应 `hitCount` 与 `annualHitCount`。
+当前日志使用 `[g1-acq]` 前缀，汇总格式为 `g1-acq-v7.3 hits=N annualHits=N`，逐行输出 `源 SKU → 实际目标 xN`；20TB / 30TB 选用备用档时，该行附 `fallback=75p`。报告中的 `to` 与逐行日志对应，主汇总的 `hits` 与 `annualHits` 分别对应 `hitCount` 与 `annualHitCount`。
 
-这里保存的是**最近一次进入三档改写检查的执行记录**，不是累计测试历史；该范围内后续零命中响应也会更新记录。`configuredTarget` 表示当前配置，`test.target` 表示最近执行配置的目标，升级本身不会改写旧记录；出现两种目标时先对照 `test.version` 与执行时间。命中次数仅证明文本替换，不证明 App Store 接受目标商品或已完成订阅。
+这里保存的是**最近一次进入三档改写检查的执行记录**，不是累计测试历史；该范围内后续零命中响应也会更新记录。`configuredTarget` 表示当前配置，`test.target` 表示最近执行时实际保存的目标；升级本身保留历史 ID 与旧 `test.targetOrigin`，不会将它们重标为当前候选或 `user-specified`。当前配置与保存目标不同时，先对照 `test.version` 与执行时间。命中次数仅证明文本替换，不证明 App Store 接受目标商品或已完成订阅。
 
 `hitCount=0` 与 `status=no-match` 表示本次文本响应三档都未命中，不等于账号没有 2TB 商品，也不等于目标商品不存在。若 `annualHitCount=0`、`hitCount>0`，说明只命中了 20TB / 30TB，状态仍为 `rewritten`；判断 2TB 年付实验须看 `annualHitCount`，再对照各行 `id` 与 `to`。
 
@@ -99,7 +99,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 
 ## 5. 本地结果页、导出与清理
 
-保持小火箭连接与新版 **G1 ACQ** 开启，在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)。页面上方应显示 **本机脚本已接管** 和 **v7.2.0** 标识，操作区有 **导出 JSON** 按钮；点按钮即可导出，也可使用下面的直接地址：
+保持小火箭连接与新版 **G1 ACQ** 开启，在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)。页面上方应显示 **本机脚本已接管** 和 **v7.3.0** 标识，操作区有 **导出 JSON** 按钮；点按钮即可导出，也可使用下面的直接地址：
 
 | 地址 | 动作 |
 |---|---|
@@ -118,21 +118,24 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
 | `g1.sku.scan.v1` | 候选 ID、累计次数、最近发现时间、扫描响应计数与上限状态 |
 | `g1.pro.annual.test.v1` | 最近一次执行的脚本版本、2TB 源前缀、三档命中源 ID 与逐行实际目标及备用状态、2TB 目标、总改写数、2TB 改写数、时间和状态 |
 
-HTML 按命中行显示完整源 ID、实际目标、次数与备用状态，避免把 `test.target` 误读成 20TB / 30TB 的目标。新版结果页兼容旧 v1 的仅 2TB 记录：旧行缺少 `to` 时补为原普通年付目标 `g1.2tb.ai.annual`，缺少的 `annualHitCount` 从旧 2TB 行次数计算；旧行按未使用备用档展示。旧 v1 / v7.1 记录的 `test.target` 保留原普通年付目标，`test.targetOrigin` 显示 `legacy`。保留旧记录无需先清空这两个键。
+HTML 按命中行显示完整源 ID、实际目标、次数与备用状态，避免把 `test.target` 误读成 20TB / 30TB 的目标。新版结果页兼容旧 v1 的仅 2TB 记录：旧行缺少 `to` 时补为原普通年付目标 `g1.2tb.ai.annual`，缺少的 `annualHitCount` 从旧 2TB 行次数计算；旧行按未使用备用档展示。旧 v1 / v7.1 记录的 `test.target` 保留原普通年付目标，`test.targetOrigin` 显示 `legacy`；旧 v7.2 记录保留实际保存的 `g1.2tb.ai.annual.3months_ip_90p.acq` 与 `pattern-derived`，升级不重标旧 ID 或旧来源。保留旧记录无需先清空这两个键。
 
 JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastSeen`；测试字段见第 4 节。导出还包含必要的版本、存储状态与统计字段，不包含请求头、请求体或完整响应正文。
 
 `?clear=1` 只清空上述两个键的内容，不执行小火箭“清空所有数据”。清空后返回不带 `clear=1` 的[本地报告地址](https://one.google.com/g1-sku-report)，避免刷新清理地址时再次清除新记录。
 
-## 6. “扫描 SKU”的三个层级
+## 6. 在 iOS 小火箭中采集与验证隐藏 SKU
 
-| 层级 | 实际方法 | 能确认的内容 |
-|---|---|---|
-| 网页被动采集 | G1 ACQ 内置自动采集，记录已浏览 `one.google.com/` 原始响应中的字符串 | 发现候选 ID；不确认商店收录、地区可售或当前账号购买资格 |
-| iOS 商品查询 | 在对应 App 上下文中用 StoreKit `Product.products(for:)` 或 `SKProductsRequest` 查询一组已知 ID | 返回该 App 上下文下能取得的商品信息；StoreKit 客户端没有列出该 App 全部商品的接口 |
-| Google Play 商品查询 | 用 Google Play Billing 查询已知商品 ID | 只证明 Play 目录中的商品信息，不等同于 iOS App Store 目录 |
+当前项目运行在 **iPhone + Shadowrocket + Google App** 中。采集读取整份匹配的原始文字响应：即使某个编号所在的方案没有显示在页面上，只要编号已经出现在该响应里，也会被提取。页面只显示几个方案，不等于响应里只有几个编号。
 
-本仓库提供第一级采集和网页 ID 改写测试，没有在小火箭中执行 StoreKit 或 Google Play Billing 查询。把一个 ID 放进网页、看到候选 ID、脚本成功替换、App Store 返回商品，是不同的验证结果，记录时分别描述。
+1. 保持同一个 **G1 ACQ** 开启，在 Google App 内依次打开实际提供的 2TB / Pro、月付、年付和优惠入口；每次等页面加载完成，让模块收集不同入口下发的原始响应。
+2. 在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)，查看“浏览页面时采集到的候选 SKU”；这部分保存改写前取得的完整编号，最多 300 个。
+3. 对本轮指定候选 `g1.2tb.ai.annual_ip_90p.acq`，重新进入原始 2TB / Pro 方案，让模块替换该入口中的源编号；在报告中核对 `test.version=g1-acq-v7.3`、`test.target` 和对应行的 `to`。
+4. 从该方案进入原生订阅流程，查看 App Store 实际显示的商品、周期、初次与续费金额；保存实际显示结果，再导出 JSON 对照脚本执行记录。
+
+原始采集清单和配置的替换候选分别保存。模块自身写入的新目标不会自动成为“采集到的隐藏 SKU”；服务器没有下发的编号也不在这次采集结果中。当前小火箭脚本处理网络响应，没有直接调用 Google App 内 StoreKit 的接口，报告中的“替换成功”仅描述文本改写。
+
+原生 iOS 商品查询使用 StoreKit `Product.products(for:)` 或 `SKProductsRequest`，由对应 App 上下文提交已知 ID；这类查询返回商品详情，并非列出全部商品的目录接口。本项目的手机操作流程是采集原始编号、替换指定候选、查看原生订阅返回，再保存报告。
 
 ## 7. 常见结果的判断
 
@@ -140,7 +143,7 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 |---|---|
 | 报告页显示“暂无记录” | 核对启用的模块与 HTTPS 解密配置，再从 Google App 重新加载目标方案；以报告中的时间与扫描响应计数判断是否有新数据 |
 | Safari 显示 Google 普通页面或 404 | 当前未展示本机报告；按第 5 节核对新版 G1 ACQ、连接、当前配置的 HTTPS 解密、`one.google.com` 与受信任证书，将完整报告 URL 粘贴到 Safari 地址栏打开 |
-| 页面没有“本机脚本已接管”、`v7.2.0` 标识或“导出 JSON”按钮 | 核对已按第 1 节替换为新版主模块，再重新打开第 5 节本机报告；直接 JSON 导出地址也列在第 5 节 |
+| 页面没有“本机脚本已接管”、`v7.3.0` 标识或“导出 JSON”按钮 | 核对已按第 1 节替换为新版主模块，再重新打开第 5 节本机报告；直接 JSON 导出地址也列在第 5 节 |
 | 报告页显示本地存储接口暂未就绪 | 页面脚本未取得 `$persistentStore` 读取接口，当前页面不构成采集成功的证据；记录显示结果与小火箭版本 |
 | 扫描响应计数增加，但没有候选 ID | 本次已处理的正文未出现匹配字符串；继续浏览实际提供的 2TB / Pro 与月付、年付页面，不凭空生成 ID |
 | 已采集到 2TB ID，但 `annualHitCount` 为 0 | 对照执行时间、完整源 ID、`g1.ios.2tb.` 前缀与 `/ai?` 匹配范围；按第 3 节重新采集 |
@@ -148,7 +151,7 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 | `status=no-match`、`hitCount=0` | 本次文本响应三档都未命中；对照第 4 节完整源 ID 与 URL 范围，再按第 3 节采集 |
 | 20TB / 30TB 的 `fallback=true` | 对应默认 90p 未见于原始正文，已选用正文中的该档 75p；核对该行 `to` 和收银台实际结果 |
 | `hitCount` 大于 0，但收银台报错或未出现 | 记录实际提示与该档的实际目标 `to`；文本替换成功与商店接受目标商品分别记录 |
-| App Store 商品、周期或金额与预期不同 | 按收银台实际显示记录，原始商品的 `P1Y / US$199.99` 与候选后缀均不构成候选实际周期或价格的证据 |
+| App Store 商品、周期或金额与预期不同 | 按本次 App Store 返回商品与收银台显示记录；候选编号中的 `annual` 和 `90p` 不替代实际周期与金额 |
 | 采集达到 300 个上限 | 先导出，再用 `?clear=1` 清空本工具记录，返回报告主页后集中浏览目标方案 |
 
 ## 8. 实机记录模板
@@ -157,16 +160,16 @@ JSON 中的核心采集字段是 `scan.skus`，每项含 `id`、`count`、`lastS
 采集 / 测试时间（含时区）：[填写]
 iOS / Google App / Shadowrocket 版本：[填写]
 主模块名称：G1 ACQ
-主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.2.0/g1-acq-v7.sgmodule
-主模块发布版本：v7.2.0
-主模块脚本版本：g1-acq-v7.2
-运行方式：单模块自动采集原始 SKU，再执行三档改写（含 2TB 一折年付候选）
+主模块地址：https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
+主模块发布版本：v7.3.0
+主模块脚本版本：g1-acq-v7.3
+运行方式：单模块自动采集原始 SKU，再执行三档改写（含 2TB 用户指定候选）
 当前启用主模块：G1 ACQ
 报告顶部本机标识与版本：[填写实际显示]
-报告脚本版本 reportVersion：[填写实际显示；当前 v7.2.0]
-当前配置目标 configuredTarget：g1.2tb.ai.annual.3months_ip_90p.acq
-候选推导：g1.2tb.ai.annual + .3months_ip_90p.acq
-候选验证状态：商店识别、年付周期、一折价格均未验证；按本轮收银台实际结果填写
+报告脚本版本 reportVersion：[填写实际显示；当前 v7.3.0]
+当前配置目标 configuredTarget：g1.2tb.ai.annual_ip_90p.acq
+候选来源：用户指定（user-specified），字面值 g1.2tb.ai.annual_ip_90p.acq
+候选验证状态：待 App Store 实际返回商品；按本轮商品名称、周期、初次与续费金额填写
 是否看到并点按“导出 JSON”按钮：[填写]
 Google App 内实际打开的方案名称：[填写 2TB / Pro、20TB 或 30TB 的实际名称]
 采集到的原始 iOS 2TB 完整 SKU：[填写原文；未出现则记“未采集到”]
@@ -174,8 +177,8 @@ Google App 内实际打开的方案名称：[填写 2TB / Pro、20TB 或 30TB �
 执行脚本版本 test.version：[填写]
 最近测试时间 test.updatedAt：[填写]
 逐行源 ID、实际目标、次数、备用状态 test.matchedFrom：[填写 {id, to, count, fallback}]
-最近执行的 2TB 目标 test.target：[填写保存值；旧记录保留 g1.2tb.ai.annual]
-最近执行的目标来源 test.targetOrigin：[填写 pattern-derived / legacy / 空值]
+最近执行的 2TB 目标 test.target：[填写实际保存值；旧记录保留其原始目标 ID]
+最近执行的目标来源 test.targetOrigin：[填写 user-specified / pattern-derived / legacy / 空值；保留旧来源]
 三档总改写数 test.hitCount：[填写]
 仅 2TB 年付改写数 test.annualHitCount：[填写]
 执行状态 test.status：[填写]

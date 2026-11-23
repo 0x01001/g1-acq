@@ -3,8 +3,8 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.2.0";
-  var CONFIGURED_TARGET = "g1.2tb.ai.annual.3months_ip_90p.acq";
+  var VERSION = "v7.3.0";
+  var CONFIGURED_TARGET = "g1.2tb.ai.annual_ip_90p.acq";
   var LEGACY_TARGET = "g1.2tb.ai.annual";
   var SCAN_KEY = "g1.sku.scan.v1";
   var TEST_KEY = "g1.pro.annual.test.v1";
@@ -83,6 +83,10 @@
     matchedFrom.reduce(function (total, row) {
       return total + (row.id.indexOf("g1.ios.2tb.") === 0 ? row.count : 0);
     }, 0);
+  var storedOrigin = text(testRaw.targetOrigin, 32);
+  var targetOrigin = recordedTarget && /^(?:user-specified|pattern-derived|legacy)$/.test(storedOrigin) ?
+    storedOrigin : recordedTarget === CONFIGURED_TARGET ? "user-specified" :
+      recordedTarget === LEGACY_TARGET ? "legacy" : "";
   var report = {
     schemaVersion: 1,
     reportVersion: VERSION,
@@ -102,8 +106,7 @@
       updatedAt: text(testRaw.updatedAt, 32),
       sourcePrefix: "g1.ios.2tb.",
       target: recordedTarget,
-      targetOrigin: recordedTarget === CONFIGURED_TARGET ? "pattern-derived" :
-        recordedTarget === LEGACY_TARGET ? "legacy" : "",
+      targetOrigin: targetOrigin,
       status: text(testRaw.status, 32),
       hitCount: count(testRaw.hitCount),
       annualHitCount: annualHitCount,
@@ -166,7 +169,7 @@
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
     "<section><h2>最近一次三档映射</h2>",
     "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
-    "<p class=note>候选来自年付编号加现有 .3months_ip_90p.acq 规则；商品、价格与周期待实机验证。</p>",
+    "<p class=note>本版按指定 annual_ip_90p.acq 编号测试；商品、价格与周期待实机验证。</p>",
     "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
     "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>20TB / 30TB 沿用旧优惠映射与 75p 回退；各档实际目标见下表。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",

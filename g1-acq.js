@@ -2,10 +2,10 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.2";
+  var VERSION = "g1-acq-v7.3";
   var SOURCE_PREFIX = "g1.ios.2tb.";
-  // Pattern-derived candidate: annual base ID + the existing 90p suffix.
-  var TARGET = "g1.2tb.ai.annual.3months_ip_90p.acq";
+  // User-specified annual candidate; store metadata is still unverified.
+  var TARGET = "g1.2tb.ai.annual_ip_90p.acq";
   var SKU_MAP = {
     "g1.ios.20tb.m.v2": "g1.20tb.3months_ip_90p.acq",
     "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.3months_ip_90p.acq"
@@ -84,7 +84,7 @@
     updatedAt: new Date().toISOString(),
     sourcePrefix: SOURCE_PREFIX,
     target: TARGET,
-    targetOrigin: "pattern-derived",
+    targetOrigin: "user-specified",
     hitCount: hits,
     annualHitCount: annualHits,
     matchedFrom: sources,
