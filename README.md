@@ -6,21 +6,23 @@
 
 Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **Shadowrocket / 小火箭**。
 
-**只需一个 G1 ACQ：自动采集原始 SKU、执行三档改写，并提供本机报告与 JSON 导出。** 原始 iOS 2TB → `g1.2tb.ai.annual_ip_90p.acq` 用户指定候选测试，20TB / 30TB 保留原有优惠映射与独立回退。删除手机旧 **G1 ACQ**，用下方 `v7.3.0` 新地址替换一次即可；响应脚本版本为 `g1-acq-v7.3`，无需另装扫描器或反复切换模块。完整安装与实机核对步骤见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
+**只需一个 G1 ACQ：被动采集原始 SKU、执行三档改写，并提供最近 10 次响应、本次新增、重复诊断与 JSON 导出。** 原始 iOS 2TB → `g1.2tb.ai.annual_ip_90p.acq` 用户指定候选测试，20TB / 30TB 保留原有优惠映射与独立回退。当前安装版本为 `v7.4.0`，响应脚本为 `g1-acq-v7.4`，无需另装扫描器或反复切换模块。采集只读取手机实际收到的匹配响应，**不会主动查询全量 SKU**；旧 ID 再次出现时累加次数，清单保持原样也能代表正在收到重复数据。完整安装与实机核对步骤见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
 
 > 响应中出现商品 ID，只能证明页面携带该字符串，不等于 App Store 商品目录校验。改写命中也不等于商品可购买；商品名称、周期、初次与续费金额须在 App Store 收银台核对，权益以 Google One 账户实际状态为准。
 
 ## 主模块安装地址
 
-**G1 ACQ：自动采集、三档改写与本机报告**
+**G1 ACQ：被动采集、三档改写与响应活动诊断**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.4.0/g1-acq-v7.sgmodule
 ```
 
-在小火箭模块管理中删除手机上的旧 **G1 ACQ**，再添加上面的新地址并启用；首次安装也使用该地址。模块安装入口与内部响应、报告脚本均固定引用 `@v7.3.0`，无需单独添加脚本；安装后重新连接，再重新进入 Google App 的订阅页。
+首次安装时在小火箭模块管理中添加上面的地址并启用；从旧版本升级时，将旧 **G1 ACQ** 替换为此地址一次。模块安装入口与内部响应、报告脚本均固定引用 `@v7.4.0`，无需单独添加脚本；安装或升级后重新连接，再重新进入 Google App 的订阅页。升级保留本地历史记录；新增诊断不保证产生新 ID，重复安装也不会促使服务器下发新 SKU。
 
-只开启这一个 **G1 ACQ** 即可。若手机曾安装独立 **G1 SKU Scan**、**G1 Pro Annual Test** 或其它改写副本，停用这些旧副本，避免重复计数或改写；只装了一个主模块时没有额外关闭步骤。历史 `v7.0.0` / `v7.1.0` / `v7.2.0`、`pro-annual-test-v1` / `pro-annual-test-v2` 标签保持不动。
+只开启这一个 **G1 ACQ** 即可。若手机曾安装独立 **G1 SKU Scan**、**G1 Pro Annual Test** 或其它改写副本，停用这些旧副本，避免重复计数或改写；只装了一个主模块时没有额外关闭步骤。历史 `v7.0.0` / `v7.1.0` / `v7.2.0` / `v7.3.0`、`pro-annual-test-v1` / `pro-annual-test-v2` 标签保持不动。
+
+最近 10 次响应诊断由主脚本 `g1-acq-v7.4` 提供；年付兼容入口也使用该脚本，但仍仅匹配 `/ai?`。独立 **G1 SKU Scan** 兼容入口只更新下载 pin，脚本继续保存历史版本 `pro-annual-test-v2`，没有新增活动诊断；新版报告读取它时显示 **旧采集记录**，响应历史为空。
 
 ## 三档映射
 
@@ -42,7 +44,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
 
 ![配置页入口：点击 shadowrocket.conf 右侧的 (i) 图标进入配置编辑，才能看到 HTTPS 解密](docs-config-entry.png)
 
-1. 在小火箭模块管理中删除手机上的旧 **G1 ACQ**，添加上面的 `v7.3.0` 新主安装地址并启用，首页保持 VPN 连接。
+1. 在小火箭模块管理中启用上面 `v7.4.0` 地址安装的 **G1 ACQ**；旧版用户按前文升级一次，首页保持 VPN 连接。
 2. 从上述当前配置的 **(i)** 入口进入 **HTTPS 解密**，打开解密开关。已有可用且已受信任的 Shadowrocket 证书时直接沿用；尚未配置证书时，在该页生成并安装证书，再完成下两步。
 3. 首次配置证书时，在 iOS **设置 → 通用 → VPN 与设备管理** 中完成 Shadowrocket 描述文件安装。
 4. 首次配置证书时，在 iOS **设置 → 通用 → 关于本机 → 证书信任设置** 中开启对应 Shadowrocket 根证书的信任。
@@ -51,7 +53,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
 
 ## 手机端使用流程
 
-1. 保持新版 **G1 ACQ** 开启与小火箭连接，采集和改写会自动依次执行。
+1. 保持新版 **G1 ACQ** 开启与小火箭连接；收到匹配响应后，采集和改写会自动依次执行。
 2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，进入 **2TB / Pro** 方案进行年付测试；核对保留映射时，再分别打开实际提供的 **20TB / 30TB** 方案。
 3. 进入订阅流程后，核对 App Store 收银台显示的商品名称、周期、初次与续费金额；在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)，查看原始候选 SKU 与改写记录，再点操作区的 **导出 JSON** 按钮。
 
@@ -59,19 +61,30 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
 
 截图展示 20TB 入口；2TB 年付测试应打开 **2TB / Pro** 方案。账号、地区和版本会影响页面展示，以手机实际提供的方案为准。原生 StoreKit 界面自身不属于网页响应改写范围。
 
-浏览方案时，主模块会先读取原始正文中的 `g1.*` 与 `com.google.one.*`，按 ID 去重累计次数，最多保留 **300 个 ID**，然后才执行符合 `/ai?` 范围的三档改写。采集保存的是改写前的原始编号，跳过本地报告页；无需另装扫描器。手机只保存候选 ID、次数、时间与扫描状态，不保存完整响应正文，不查询 App Store，不发网络上报。
+浏览方案且收到匹配响应时，主模块会先读取原始正文中的 `g1.*` 与 `com.google.one.*`，按 ID 去重累计次数，最多保留 **300 个 ID**，然后才执行符合 `/ai?` 范围的三档改写。重复 ID 只更新次数和时间；到达容量后继续更新已保存 ID，并记录被容量丢弃的新 ID 数。采集保存的是改写前的原始编号，跳过本地报告页；无需另装扫描器。手机保存候选 ID、次数、时间、扫描状态和最多 10 条经过路径脱敏的响应事件，不保存完整响应正文，不查询 App Store，不发网络上报。
 
 查找页面未展示的 SKU 时，依次浏览 Google App 实际提供的月付、年付和优惠入口：原始响应中携带的编号即使未显示在界面上，也会被采集。服务器未下发的编号不会进入原始清单；指定候选由模块替换后，在 App Store 原生订阅界面验证。完整 iOS 操作见 [SKU 采集与候选验证](docs/pro-annual-test.md#6-在-ios-小火箭中采集与验证隐藏-sku)。
 
 ## 本地报告与排错
 
-保持 **G1 ACQ** 开启与小火箭连接，在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)。页面上方应显示 **本机脚本已接管** 和 **v7.3.0** 标识，操作区有 **导出 JSON** 按钮；也可直接打开[JSON 导出地址](https://one.google.com/g1-sku-report?format=json)。
+保持 **G1 ACQ** 开启与小火箭连接，在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)。页面上方应显示 **本机脚本已接管** 和 **v7.4.0** 标识，操作区有 **导出 JSON** 按钮；也可直接打开[JSON 导出地址](https://one.google.com/g1-sku-report?format=json)。
 
 地址使用 `one.google.com`，页面由 Shadowrocket 的 `http-request` 脚本在手机本机生成，**不是 Google 提供的报告页面**。拦截范围为 `/g1-sku-report`、末尾带 `/` 的同一路径及其 query；本机接管后直接返回 HTML 或 JSON，不把这次请求交给 Google。
 
 若看到 Google 普通页面、404，或没有上述本机标识与导出按钮，当前展示的就不是这版本机报告。核对新版模块开启、小火箭连接、**当前配置 (i) → HTTPS 解密**、`one.google.com` hostname 与受信任证书，再把完整 URL 粘贴到 Safari 地址栏打开。
 
-`reportVersion=v7.3.0` 与顶层 `configuredTarget=g1.2tb.ai.annual_ip_90p.acq` 表示当前报告版本与配置；`test.version`、`test.target` 则来自最近一次保存的执行记录，升级后仍会保留旧版本与实际保存的旧目标，直到产生新记录。当前响应脚本为 `g1-acq-v7.3`；新候选记录的 `test.targetOrigin=user-specified`，旧 v7.2 记录保留 `pattern-derived`，旧 v1 / v7.1 普通年付记录为 `legacy`，无记录时为空。升级不会把历史 ID 或目标来源重标为当前候选。`test.target` 仅表示该次执行配置的 2TB 目标；20TB / 30TB 的实际目标看各行 `to`。
+`reportVersion=v7.4.0` 表示报告脚本版本，**不证明新版采集器已经收到响应**。报告单独展示实际保存的 `scan.version`、最近响应时间与历史；本版主采集器为 `g1-acq-v7.4`。旧脚本记录显示 **旧采集记录；尚未保存本版采集响应记录。** 版本未知或尚无记录时标为 **尚未保存本版采集响应记录**；旧记录未保存 `recentResponses` 时不补造活动历史，也不据此判断手机故障。
+
+| 采集字段 | 含义 |
+|---|---|
+| `scan.scannedResponses` | 累计处理的文字响应数，保持原有计数含义 |
+| `scan.matchedResponses` | 文字响应中至少识别到一个候选 ID 的累计响应数，含重复 ID；保持原有含义 |
+| `scan.nonTextResponses` | 本版新增的非文本响应计数，不计入 `scannedResponses` |
+| `scan.recentResponses` | 最多 10 条响应事件；JSON 数组按接收顺序旧 → 新保存，HTML 表格按新 → 旧展示；每条含 `{at, path, bodyType, status, candidateCount, addedCount, omittedCount}` |
+
+单次事件中，`candidateCount` 是该响应内去重后的候选数，`addedCount` 是本次新加入并实际保留的 ID 数，`omittedCount` 是本次因容量丢弃的不同 ID 数。状态包括 `new-skus`（新增）、`known-skus`（重复）、`no-skus`（无 ID）、`limit-reached`（无新增保留且有容量丢弃）、`non-text`（非文本）。`addedCount>0` 时优先标为 `new-skus`，即使同时 `omittedCount>0`；只有 `addedCount=0` 且 `omittedCount>0` 时才标为 `limit-reached`。路径只保留 `/`、`/ai`、`/plans`、`/_/…/data/batchexecute` 或 `[其他 one.google.com 路径]`，不保存 query、完整 URL、正文、请求头或响应头。
+
+顶层 `configuredTarget=g1.2tb.ai.annual_ip_90p.acq` 表示当前配置；`test.version`、`test.target` 则来自最近一次保存的执行记录，升级后仍会保留旧版本与实际保存的旧目标，直到产生新记录。当前响应脚本为 `g1-acq-v7.4`；新候选记录的 `test.targetOrigin=user-specified`，旧 v7.2 记录保留 `pattern-derived`，旧 v1 / v7.1 普通年付记录为 `legacy`，无记录时为空。升级不会把历史 ID 或目标来源重标为当前候选。`test.target` 仅表示该次执行配置的 2TB 目标；20TB / 30TB 的实际目标看各行 `to`。
 
 `test.hitCount` 是三档总改写数，`test.annualHitCount` 仅统计 2TB 年付改写。`test.matchedFrom` 每行含 `{id, to, count, fallback}`：`to` 是该源本次实际目标，`fallback=true` 表示 20TB / 30TB 使用对应 75p 备用档。HTML 按行显示实际目标和备用状态。
 
@@ -81,38 +94,47 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.3.0/g1-acq-v7.sgmodule
 
 | 输出标记 | 含义 |
 |---|---|
-| `g1-acq-v7.3 hits=N annualHits=N` | 当前脚本版本、三档总改写数与其中 2TB 年付改写数 |
+| `g1-acq-v7.4 status=<状态> addedCount=N candidates=N omittedCount=N occurrences=N saved=yes/no` | 采集状态、本次新保留数、单响应去重候选数、容量丢弃数、字符串出现总次数与存储结果；`saved=yes` 才表示本次记录已写入 |
+| `saved=no` / `SKU collection unavailable` | 本次记录写入未成功，或采集流程未完成；报告仍能显示旧计数与旧时间，须核对这类日志 |
+| `g1-acq-v7.4 hits=N annualHits=N` | 当前脚本版本、三档总改写数与其中 2TB 年付改写数 |
 | `源 SKU → 实际目标 xN` | 逐行记录完整源 ID、本次实际目标与该源改写次数 |
 | `fallback=75p` | 该行 20TB / 30TB 使用了正文中出现的对应 75p 备用档 |
 
-若没有新记录，先核对 VPN 连接、模块开关、当前配置的 HTTPS 解密、证书安装与信任、`one.google.com` hostname，再从 Google App 重新打开方案，以新记录的 `test.version` 或日志核对 `g1-acq-v7.3`。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
+清单仍是旧 SKU 时，按下面顺序比较一次实际活动：
+
+1. 在报告记录 `reportVersion`、实际 `scan.version`、三个响应计数与最新事件时间，保留当前清单。
+2. 从 Google App 重新进入实际提供的 2TB / Pro 方案，再浏览其它实际方案页，等待加载完成。
+3. 返回 Safari 刷新报告。文字计数增长且最新事件为 `known-skus`，说明收到的是已保存 ID，次数会增加而清单不增加；`no-skus` 表示该响应未携带可识别 ID。若只增加 `nonTextResponses`，查看 `non-text` 事件。
+4. 三个计数与最新事件时间均未变化，只能确认这轮未保存新的采集记录；存储写入失败也会保留旧计数。先查看脚本日志是否出现 `saved=no` 或 `SKU collection unavailable`，再逐项核对页面缓存、`one.google.com/` 匹配范围、VPN 连接、模块开关、当前配置的 HTTPS 解密、证书信任与 hostname。报告版本升级本身不代表采集脚本已执行。
+
+这组诊断不保证新 SKU 出现；重装模块或反复清空记录不会使服务器返回新编号。`?clear=1` 保持手动两键清理，仅在确实要重置历史时使用。完整字段、采集与实机记录模板见 [Pro 年付测试与 SKU 扫描](docs/pro-annual-test.md)。
 
 ## 工作范围与本地存储
 
 | 工具 | 脚本匹配范围 | 行为 |
 |---|---|---|
-| G1 ACQ 自动采集 | `^https://one\.google\.com/` 的文字响应，跳过本地报告页 | 先从原始正文采集候选 ID |
+| G1 ACQ 被动采集 | `^https://one\.google\.com/` 的响应，跳过本地报告页 | 从原始文字正文采集候选 ID；非文本单独计数；保存最近 10 次响应诊断 |
 | G1 ACQ 三档改写 | `^https://one\.google\.com/ai\?` 的响应 | 采集后执行完整 SKU 改写、独立回退并保存最近执行记录 |
 | 本地结果页 | `/g1-sku-report`、末尾带 `/` 的同一路径及其 query | 本机显示采集结果、最近改写记录或导出 JSON |
 
-- **脚本处理范围**：G1 ACQ 读取匹配页面的响应体，先保存候选 ID、次数、时间与扫描状态，再检查改写范围；不读取请求头或请求体，不保存完整响应正文。改写只修改商品 ID，不改价格字段，页面文字价格不替代 App Store 收银台金额。
+- **脚本处理范围**：G1 ACQ 被动读取匹配页面的响应体，先保存候选 ID、次数、时间、扫描状态与最多 10 条脱敏响应事件，再检查改写范围；不读取请求头或请求体，不保存完整响应正文。响应事件只保存时间、固定类别路径、正文类型、诊断状态与计数，不保存 query 或完整 URL。改写只修改商品 ID，不改价格字段，页面文字价格不替代 App Store 收银台金额。
 - **实际外发行为**：当前脚本没有网络上报调用；G1 ACQ 写脚本日志，采集、改写和报告共用手机本地 `$persistentStore`。Shadowrocket 脚本宿主提供网络与存储 API，当前代码未调用网络上报不等于宿主缺少外发能力。模块与脚本下载仍使用 GitHub / jsDelivr 地址。
 - **MITM 范围**：模块只追加 `one.google.com`，其全站流量进入解密范围；页面改写受脚本路径限制。证书在设备生成、安装与信任，HTTPS 解密设置属于当前配置。
 - **系统权限**：脚本没有申请定位、相册、通知的调用；使用过程包含小火箭 VPN 连接和 iOS 描述文件、根证书信任配置。
 - **全局规则影响**：模块的 `[Rule]` 拦截全局 UDP 443，促使支持回退的 QUIC 请求改走 TCP，也会影响其它 App 的 HTTP/3 使用、速度或连通性。
-- **版本与存储**：本次模块安装入口与全部内部脚本统一固定引用 `@v7.3.0`；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
+- **版本与存储**：本次模块安装入口与全部内部脚本统一固定引用 `@v7.4.0`；历史 v1 / v2 标签保留且不移动。本地键仍为 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，`schemaVersion` 保持 `1`；结果页的 `?clear=1` 只清除这两个键。
 
 ## 文件
 
 | 文件 | 用途 |
 |---|---|
-| [g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) | 唯一主模块：自动采集、三档改写与本机报告 |
-| [g1-acq.js](g1-acq.js) | `g1-acq-v7.3` 响应脚本，先采集原始 SKU 再改写并保存记录 |
-| [g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) | 旧版兼容文件，主流程无需安装或启用 |
+| [g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) | 唯一主模块：被动采集、三档改写与响应活动诊断 |
+| [g1-acq.js](g1-acq.js) | `g1-acq-v7.4` 响应脚本，先采集原始 SKU 与活动诊断，再改写并保存记录 |
+| [g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) | 旧版兼容文件，保留 `/ai?` 匹配范围，主流程无需安装或启用 |
 | [g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) | 旧版独立扫描兼容文件，主流程无需安装或启用 |
-| [g1-sku-scan.js](g1-sku-scan.js) | 旧版独立扫描脚本，保留候选 ID 去重、计数与时间记录 |
-| [g1-sku-report.js](g1-sku-report.js) | 本机 HTML 报告、导出 JSON 按钮和两键清理 |
-| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 单模块使用、自动采集、年付实机核对与报告说明 |
+| [g1-sku-scan.js](g1-sku-scan.js) | 历史独立扫描脚本，保留候选 ID 去重、计数与时间记录；未增加响应活动诊断 |
+| [g1-sku-report.js](g1-sku-report.js) | 本机 HTML 报告、实际采集版本与响应历史、导出 JSON 和手动两键清理 |
+| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 单模块使用、被动采集诊断、年付实机核对与报告字段 |
 
 ## 离线验证
 

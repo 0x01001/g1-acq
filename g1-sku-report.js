@@ -3,7 +3,8 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.3.0";
+  var VERSION = "v7.4.0";
+  var COLLECTOR_VERSION = "g1-acq-v7.4";
   var CONFIGURED_TARGET = "g1.2tb.ai.annual_ip_90p.acq";
   var LEGACY_TARGET = "g1.2tb.ai.annual";
   var SCAN_KEY = "g1.sku.scan.v1";
@@ -63,6 +64,34 @@
     }).sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
   }
 
+  var scanStatuses = {
+    "new-skus": "发现并录入新编号",
+    "known-skus": "收到响应，编号与已有记录重复",
+    "no-skus": "收到文本响应，本次没有商品编号",
+    "limit-reached": "收到新编号，已达采集容量上限",
+    "non-text": "收到响应，正文不是可扫描文本"
+  };
+  var scanPaths = ["/", "/ai", "/plans", "/_/…/data/batchexecute", "[其他 one.google.com 路径]"];
+  function recent(value) {
+    if (!Array.isArray(value)) return [];
+    return value.slice(-10).filter(function (event) {
+      return event && typeof event.at === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(event.at) &&
+        (event.bodyType === "text" || event.bodyType === "non-text") &&
+        Object.prototype.hasOwnProperty.call(scanStatuses, event.status);
+    }).map(function (event) {
+      return {
+        at: event.at,
+        path: scanPaths.indexOf(event.path) !== -1 ? event.path : "[其他 one.google.com 路径]",
+        bodyType: event.bodyType,
+        status: event.status,
+        candidateCount: count(event.candidateCount),
+        addedCount: count(event.addedCount),
+        omittedCount: count(event.omittedCount)
+      };
+    });
+  }
+
   var scanRaw = load(SCAN_KEY);
   var testRaw = load(TEST_KEY);
   var recordedTarget = sku(testRaw.target);
@@ -97,6 +126,8 @@
       updatedAt: text(scanRaw.updatedAt, 32),
       scannedResponses: count(scanRaw.scannedResponses),
       matchedResponses: count(scanRaw.matchedResponses),
+      nonTextResponses: count(scanRaw.nonTextResponses),
+      recentResponses: recent(scanRaw.recentResponses),
       truncated: scanRaw.truncated === true,
       limit: 300,
       skus: rows(scanRaw.skus, true)
@@ -146,6 +177,20 @@
             "<td><code>" + escape(row.to || "未记录") + "</code></td><td>" + (row.fallback ? "75p" : "否") + "</td>") + "</tr>";
       }).join("") + "</tbody></table></div>";
   }
+  function recentTable(events) {
+    if (!events.length) return "<p>尚无逐次响应记录；旧版采集数据没有这项诊断。</p>";
+    return "<div class=scroll><table><thead><tr><th>时间（UTC）</th><th>路径分类</th><th>本次结果</th><th>识别编号</th><th>新增录入</th><th>容量外编号</th></tr></thead><tbody>" +
+      events.slice().reverse().map(function (event) {
+        return "<tr><td>" + escape(event.at) + "</td><td>" + escape(event.path) +
+          "</td><td>" + scanStatuses[event.status] + "</td><td>" + event.candidateCount +
+          "</td><td>" + event.addedCount + "</td><td>" + event.omittedCount + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  var latestScan = report.scan.recentResponses.length ?
+    report.scan.recentResponses[report.scan.recentResponses.length - 1] : null;
+  var scanVersionStatus = report.scan.version === COLLECTOR_VERSION ?
+    "记录来自本版采集脚本；按响应时间与计数判断是否产生了新记录。" :
+    report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
   var statuses = {
     "rewritten": "已执行字符串替换",
     "no-match": "本次响应未命中三档映射中的源商品",
@@ -167,6 +212,16 @@
     "<p class=note>保持一个 G1 ACQ 模块开启即可：先采集原始响应中的编号，再执行三档改写。</p>",
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
+    "<section><h2>采集运行记录</h2>",
+    "<p>实际采集脚本：<code>" + escape(report.scan.version || "暂无记录") + "</code><br>" + scanVersionStatus + "</p>",
+    "<p>已扫描文本响应：" + report.scan.scannedResponses + "；已记录非文本响应：" + report.scan.nonTextResponses +
+      "；含商品编号的响应：" + report.scan.matchedResponses + "；累计编号：" + report.scan.skus.length + "</p>",
+    "<p>最近保存时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p>",
+    latestScan ? "<p><strong>最近一条：" + scanStatuses[latestScan.status] + "</strong><br>识别 " +
+      latestScan.candidateCount + " 个不同编号，新增录入 " + latestScan.addedCount + " 个，容量外 " + latestScan.omittedCount + " 个。</p>" : "",
+    "<p class=note>累计清单按编号去重；收到相同编号会更新次数，清单条数保持不变。先记录计数和时间，重新打开 Google App 方案页，再刷新本报告对照。</p>",
+    "<h3>最近 10 次响应</h3>", recentTable(report.scan.recentResponses),
+    "<p class=note>计数增加且显示重复编号，表示已收到响应；时间和计数保持原值，表示尚无新的匹配响应记录，可核对页面缓存、模块开关、HTTPS 解密、请求域名与脚本日志中的 saved=no。路径仅保存分类。</p></section>",
     "<section><h2>最近一次三档映射</h2>",
     "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
     "<p class=note>本版按指定 annual_ip_90p.acq 编号测试；商品、价格与周期待实机验证。</p>",
@@ -175,7 +230,7 @@
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",
-    "<p>扫描文本响应：" + report.scan.scannedResponses + "；含候选 SKU 的响应：" + report.scan.matchedResponses + "；累计编号：" + report.scan.skus.length + "</p>",
+    "<p>累计编号：" + report.scan.skus.length + "；同一编号合并计数，每次响应的新增与重复情况见上方采集运行记录。</p>",
     "<p class=note>编号在改写前从原始响应中提取，并非商店的完整商品目录；脚本生成的替换目标不会自动加入这份清单。</p>",
     report.scan.truncated ? "<p>记录已达到 300 个上限；清空后可重新采集目标页面。</p>" : "",
     table(report.scan.skus, true),
