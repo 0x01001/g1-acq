@@ -3,7 +3,9 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.1.0";
+  var VERSION = "v7.2.0";
+  var CONFIGURED_TARGET = "g1.2tb.ai.annual.3months_ip_90p.acq";
+  var LEGACY_TARGET = "g1.2tb.ai.annual";
   var SCAN_KEY = "g1.sku.scan.v1";
   var TEST_KEY = "g1.pro.annual.test.v1";
   var url = typeof $request === "object" && $request ? $request.url : "";
@@ -41,7 +43,10 @@
     var number = Number(value);
     return isFinite(number) && number > 0 ? Math.floor(number) : 0;
   }
-  function rows(value, withTime) {
+  function sku(value) {
+    return typeof value === "string" && /^g1\.[A-Za-z0-9._-]{1,160}$/.test(value) ? value : "";
+  }
+  function rows(value, withTime, defaultTarget) {
     if (!Array.isArray(value)) return [];
     return value.slice(0, 300).filter(function (row) {
       return row && typeof row.id === "string" &&
@@ -51,8 +56,7 @@
       if (withTime) {
         out.lastSeen = text(row.lastSeen, 32);
       } else {
-        out.to = typeof row.to === "string" && /^g1\.[A-Za-z0-9._-]{1,160}$/.test(row.to) ?
-          row.to : row.id.indexOf("g1.ios.2tb.") === 0 ? "g1.2tb.ai.annual" : "";
+        out.to = sku(row.to) || (row.id.indexOf("g1.ios.2tb.") === 0 ? defaultTarget || "" : "");
         out.fallback = row.fallback === true;
       }
       return out;
@@ -61,7 +65,20 @@
 
   var scanRaw = load(SCAN_KEY);
   var testRaw = load(TEST_KEY);
-  var matchedFrom = rows(testRaw.matchedFrom, false);
+  var recordedTarget = sku(testRaw.target);
+  if (!recordedTarget && /^(?:pro-annual-test-v[12]|g1-acq-v7(?:\.0|\.1)?)$/.test(testRaw.version || "")) {
+    recordedTarget = LEGACY_TARGET;
+  }
+  var matchedFrom = rows(testRaw.matchedFrom, false, recordedTarget);
+  if (!recordedTarget) {
+    matchedFrom.some(function (row) {
+      if (row.id.indexOf("g1.ios.2tb.") === 0 && row.to) {
+        recordedTarget = row.to;
+        return true;
+      }
+      return false;
+    });
+  }
   var annualHitCount = typeof testRaw.annualHitCount === "number" ? count(testRaw.annualHitCount) :
     matchedFrom.reduce(function (total, row) {
       return total + (row.id.indexOf("g1.ios.2tb.") === 0 ? row.count : 0);
@@ -69,6 +86,7 @@
   var report = {
     schemaVersion: 1,
     reportVersion: VERSION,
+    configuredTarget: CONFIGURED_TARGET,
     storageAvailable: storageAvailable,
     scan: {
       version: text(scanRaw.version, 32),
@@ -83,7 +101,9 @@
       version: text(testRaw.version, 32),
       updatedAt: text(testRaw.updatedAt, 32),
       sourcePrefix: "g1.ios.2tb.",
-      target: "g1.2tb.ai.annual",
+      target: recordedTarget,
+      targetOrigin: recordedTarget === CONFIGURED_TARGET ? "pattern-derived" :
+        recordedTarget === LEGACY_TARGET ? "legacy" : "",
       status: text(testRaw.status, 32),
       hitCount: count(testRaw.hitCount),
       annualHitCount: annualHitCount,
@@ -145,8 +165,10 @@
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
     "<section><h2>最近一次三档映射</h2>",
+    "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
+    "<p class=note>候选来自年付编号加现有 .3months_ip_90p.acq 规则；商品、价格与周期待实机验证。</p>",
     "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
-    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>2TB 固定目标：<code>g1.2tb.ai.annual</code><br>20TB / 30TB 沿用旧优惠映射与 75p 回退；各档实际目标见下表。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>20TB / 30TB 沿用旧优惠映射与 75p 回退；各档实际目标见下表。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",
