@@ -5,14 +5,14 @@
   var VERSION = "g1-acq-v7.5";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
-  var TARGET = "g1.2tb.ai.12months_ip_90p";
+  var TARGET = "g1.2tb.ai.12months_ip_90p";   // leave 2TB as-is (its 12-mo deal is fine)
   var SKU_MAP = {
-    "g1.ios.20tb.m.v2": "g1.20tb.3months_ip_90p.acq",
-    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.3months_ip_90p.acq"
+    "g1.ios.20tb.m.v2": "g1.20tb.1month_eft.acq",
+    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.1month_eft.acq"
   };
   var FALLBACK = {
-    "g1.20tb.3months_ip_90p.acq": "g1.20tb.3months_ip_75p.acq",
-    "g1.ai.ultra.3months_ip_90p.acq": "g1.ai.ultra.3months_ip_75p.acq"
+    "g1.20tb.1month_eft.acq": "g1.20tb.3months_ip_90p.acq",
+    "g1.ai.ultra.1month_eft.acq": "g1.ai.ultra.3months_ip_90p.acq"
   };
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";
