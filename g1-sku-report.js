@@ -3,8 +3,14 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.6.0";
-  var COLLECTOR_VERSION = "g1-acq-v7.6";
+  var VERSION = "v7.7.0";
+  var CONFIGURED_MODE = "trial";
+  var COLLECTOR_VERSION = "g1-acq-v7.7-trial";
+  var CURRENT_COLLECTORS = ["g1-acq-v7.7-trial", "g1-acq-v7.7-discount"];
+  var MODE_NAMES = {
+    trial: "Ultra 1个月免费试用优先",
+    discount: "Ultra 三个月一折优先"
+  };
   var CONFIGURED_TARGET = "g1.2tb.ai.12months_ip_90p";
   var LEGACY_TARGET = "g1.2tb.ai.annual";
   var SCAN_KEY = "g1.sku.scan.v1";
@@ -39,6 +45,12 @@
   }
   function text(value, length) {
     return typeof value === "string" ? value.slice(0, length || 180) : "";
+  }
+  function mode(value) {
+    return value === "trial" || value === "discount" ? value : "";
+  }
+  function modeName(value) {
+    return mode(value) ? MODE_NAMES[value] : "未记录";
   }
   function count(value) {
     var number = Number(value);
@@ -119,10 +131,12 @@
   var report = {
     schemaVersion: 1,
     reportVersion: VERSION,
+    configuredMode: CONFIGURED_MODE,
     configuredTarget: CONFIGURED_TARGET,
     storageAvailable: storageAvailable,
     scan: {
       version: text(scanRaw.version, 32),
+      mode: mode(scanRaw.mode),
       updatedAt: text(scanRaw.updatedAt, 32),
       scannedResponses: count(scanRaw.scannedResponses),
       matchedResponses: count(scanRaw.matchedResponses),
@@ -134,6 +148,7 @@
     },
     test: {
       version: text(testRaw.version, 32),
+      mode: mode(testRaw.mode),
       updatedAt: text(testRaw.updatedAt, 32),
       sourcePrefix: "g1.ios.2tb.",
       target: recordedTarget,
@@ -195,7 +210,12 @@
     report.scan.recentResponses[report.scan.recentResponses.length - 1] : null;
   var scanVersionStatus = report.scan.version === COLLECTOR_VERSION ?
     "记录来自本版采集脚本；按响应时间与计数判断是否产生了新记录。" :
-    report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
+    CURRENT_COLLECTORS.indexOf(report.scan.version) !== -1 ?
+      "记录来自本版另一入口；当前报告入口与保存记录分别显示，重新打开方案页后按模式和时间核对。" :
+      report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
+  var configuredOffers = CONFIGURED_MODE === "discount" ?
+    "当前入口的 20TB / 30TB 默认使用 Ultra 三个月一折（90p），以三个月 75p 为备用。" :
+    "当前入口的 20TB / 30TB 默认使用 Ultra 1个月免费试用（1month_eft），以三个月 90p 为备用。";
   var statuses = {
     "rewritten": "已执行字符串替换",
     "no-match": "本次响应未命中三档映射中的源商品",
@@ -212,13 +232,14 @@
     "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge{display:inline-block;background:#e0f4e8;color:#176238;padding:4px 10px;border-radius:8px}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0}.actions form{margin:0}button,.actions a{font:inherit;padding:10px 16px;border:0;border-radius:8px;cursor:pointer;text-decoration:none}.actions a{background:#e4eaf3}.actions button{background:#1259be;color:white}button{background:#e4eaf3;color:#1c2737}</style>",
     "<h1>Google One SKU 本地报告</h1>",
     "<p class=badge>本机脚本已接管 · " + VERSION + "</p>",
+    "<p><strong>当前报告入口：" + modeName(report.configuredMode) + "</strong></p>",
     "<nav class=actions aria-label=报告操作><form method=get action=\"" + ROOT + "\"><button type=submit name=format value=json>导出 JSON</button></form><a href=\"" + ROOT + "\">刷新报告</a></nav>",
     "<p class=note>此页由当前设备的 Shadowrocket 生成；地址栏沿用 one.google.com，采集记录保存在当前设备。</p>",
     "<p class=note>保持一个 G1 ACQ 模块开启即可：先采集原始响应中的编号，再执行三档改写。</p>",
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
     "<section><h2>采集运行记录</h2>",
-    "<p>实际采集脚本：<code>" + escape(report.scan.version || "暂无记录") + "</code><br>" + scanVersionStatus + "</p>",
+    "<p>实际采集脚本：<code>" + escape(report.scan.version || "暂无记录") + "</code><br>实际采集模式：" + modeName(report.scan.mode) + "<br>" + scanVersionStatus + "</p>",
     "<p>已扫描文本响应：" + report.scan.scannedResponses + "；已记录非文本响应：" + report.scan.nonTextResponses +
       "；含商品编号的响应：" + report.scan.matchedResponses + "；累计编号：" + report.scan.skus.length + "</p>",
     "<p>最近保存时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p>",
@@ -230,8 +251,8 @@
     "<section><h2>最近一次三档映射</h2>",
     "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
     "<p class=note>本版按指定 12months_ip_90p 编号测试，完整目标以 _ip_90p 结尾；实际商品、价格与扣款周期查看 App Store 购买面板。</p>",
-    "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
-    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>当前 20TB / 30TB 支持 Ultra 1个月免费试用（1month_eft），以三个月 90p 为备用；下表保留该次记录的实际目标与备用档，历史 75p 记录按原样显示。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<p>版本：" + escape(report.test.version || "暂无") + "<br>实际映射模式：" + modeName(report.test.mode) + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
+    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>" + configuredOffers + " 下表保留该次记录的实际目标与备用档，历史 75p 记录按原样显示。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",

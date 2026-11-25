@@ -2,7 +2,8 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.6";
+  var VERSION = "g1-acq-v7.7-trial";
+  var MODE = "trial";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
   var TARGET = "g1.2tb.ai.12months_ip_90p";
@@ -45,7 +46,7 @@
   var out = body;
 
   if (typeof body === "string") {
-    // Select each tier's free-trial or 90p fallback SKU from the original response.
+    // Select each tier's preferred or fallback SKU from the original response.
     // These are observed strings, not a verified store catalog.
     var observed = body.match(/g1\.[a-z0-9._]{2,60}acq/g) || [];
     // Match complete tokens before selecting 2TB or the two existing source IDs.
@@ -81,6 +82,7 @@
   var record = {
     schemaVersion: 1,
     version: VERSION,
+    mode: MODE,
     updatedAt: new Date().toISOString(),
     sourcePrefix: SOURCE_PREFIX,
     target: TARGET,
@@ -103,7 +105,7 @@
     console.log("[g1-acq] local record unavailable");
   }
 
-  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits);
+  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits + " mode=" + MODE);
   sources.forEach(function (source) {
     console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count +
       (source.fallback ? " fallback=" + source.to : ""));
@@ -195,6 +197,7 @@
     var state = {
       schemaVersion: 1,
       version: VERSION,
+      mode: MODE,
       updatedAt: now,
       scannedResponses: priorCount(saved.scannedResponses) + (isText ? 1 : 0),
       matchedResponses: priorCount(saved.matchedResponses) + (hitCount > 0 ? 1 : 0),
@@ -215,7 +218,7 @@
 
     console.log("[g1-acq] " + VERSION + " status=" + status + " addedCount=" + addedCount +
       " candidates=" + candidateCount + " omittedCount=" + omittedCount +
-      " occurrences=" + hitCount + " saved=" + (stored ? "yes" : "no"));
+      " occurrences=" + hitCount + " saved=" + (stored ? "yes" : "no") + " mode=" + MODE);
     Object.keys(found).sort().slice(0, SCAN_LIMIT).forEach(function (id) {
       console.log("[g1-acq] " + id + " x" + found[id]);
     });
