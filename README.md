@@ -46,7 +46,9 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.6.0/g1-acq-v7.sgmodule
 
 进入 **配置页 → 当前使用配置右侧的 (i) 图标 → HTTPS 解密**。
 
-![配置页入口：点击 shadowrocket.conf 右侧的 (i) 图标进入配置编辑，才能看到 HTTPS 解密](docs-config-entry.png)
+![配置页入口示意：点击当前使用配置右侧的 (i) 图标进入配置编辑，才能看到 HTTPS 解密](docs-config-entry-example.png)
+
+图中配置名为示例；个人文件列表、修改时间、文件大小和设备状态栏已移除。
 
 1. 在小火箭模块管理中启用上面 `v7.6.0` 地址安装的 **G1 ACQ**；旧版用户按前文升级一次，首页保持 VPN 连接。
 2. 从上述当前配置的 **(i)** 入口进入 **HTTPS 解密**，打开解密开关。已有可用且已受信任的 Shadowrocket 证书时直接沿用；尚未配置证书时，在该页生成并安装证书，再完成下两步。
@@ -61,7 +63,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.6.0/g1-acq-v7.sgmodule
 2. 打开 **Google App（彩色 G 图标）→ Google One 管理**，进入 **2TB / Pro** 方案进行12个月优惠测试；核对 Ultra 1个月免费试用映射时，再分别打开实际提供的 **20TB / 30TB** 方案。
 3. 进入订阅流程后，核对 App Store 收银台显示的商品名称、周期、初次与续费金额；在 Safari 地址栏粘贴完整[本地报告地址](https://one.google.com/g1-sku-report)，查看原始候选 SKU 与改写记录，再点操作区的 **导出 JSON** 按钮。
 
-![Google One Ultra 方案选择面板：旧模块的 20TB 方案入口示例](docs-ultra-plans.png)
+![Google One Ultra 方案选择面板：旧模块的 20TB 方案入口示例](docs-ultra-plans-example.png)
 
 截图展示 20TB 入口；2TB 12个月优惠测试应打开 **2TB / Pro** 方案。账号、地区和版本会影响页面展示，以手机实际提供的方案为准。原生 StoreKit 界面自身不属于网页响应改写范围。
 
