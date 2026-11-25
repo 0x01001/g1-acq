@@ -4,13 +4,13 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.7.0";
-  var CONFIGURED_MODE = "discount";
-  var COLLECTOR_VERSION = "g1-acq-v7.7-discount";
-  var CURRENT_COLLECTORS = ["g1-acq-v7.7-trial", "g1-acq-v7.7-discount"];
+  var VERSION = "v7.8.0";
+  var CONFIGURED_MODE = "discount75";
+  var COLLECTOR_VERSION = "g1-acq-v7.8-75p";
   var MODE_NAMES = {
-    trial: "Ultra 1个月免费试用优先",
-    discount: "Ultra 三个月一折优先"
+    discount75: "Ultra 三个月 75p（2.5折）",
+    trial: "Ultra 1个月免费试用优先（历史模式）",
+    discount: "Ultra 三个月一折优先（历史模式）"
   };
   var CONFIGURED_TARGET = "g1.2tb.ai.12months_ip_90p";
   var LEGACY_TARGET = "g1.2tb.ai.annual";
@@ -48,7 +48,7 @@
     return typeof value === "string" ? value.slice(0, length || 180) : "";
   }
   function mode(value) {
-    return value === "trial" || value === "discount" ? value : "";
+    return value === "discount75" || value === "trial" || value === "discount" ? value : "";
   }
   function modeName(value) {
     return mode(value) ? MODE_NAMES[value] : "未记录";
@@ -211,12 +211,9 @@
     report.scan.recentResponses[report.scan.recentResponses.length - 1] : null;
   var scanVersionStatus = report.scan.version === COLLECTOR_VERSION ?
     "记录来自本版采集脚本；按响应时间与计数判断是否产生了新记录。" :
-    CURRENT_COLLECTORS.indexOf(report.scan.version) !== -1 ?
-      "记录来自本版另一入口；当前报告入口与保存记录分别显示，重新打开方案页后按模式和时间核对。" :
-      report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
-  var configuredOffers = CONFIGURED_MODE === "discount" ?
-    "当前入口的 20TB / 30TB 默认使用 Ultra 三个月一折（90p），以三个月 75p 为备用。" :
-    "当前入口的 20TB / 30TB 默认使用 Ultra 1个月免费试用（1month_eft），以三个月 90p 为备用。";
+    report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
+  var configuredOffers = "当前入口的 20TB / 30TB 固定使用 Ultra 三个月 75p（2.5折），没有备用档。" +
+    "本版已移除 Ultra 试用与一折选择，旧记录保留原模式和实际目标。";
   var statuses = {
     "rewritten": "已执行字符串替换",
     "no-match": "本次响应未命中三档映射中的源商品",
@@ -253,7 +250,7 @@
     "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
     "<p class=note>本版按指定 12months_ip_90p 编号测试，完整目标以 _ip_90p 结尾；实际商品、价格与扣款周期查看 App Store 购买面板。</p>",
     "<p>版本：" + escape(report.test.version || "暂无") + "<br>实际映射模式：" + modeName(report.test.mode) + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
-    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>" + configuredOffers + " 下表保留该次记录的实际目标与备用档，历史 75p 记录按原样显示。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>" + configuredOffers + " 下表保留该次记录的实际目标与备用状态；本版 75p 为默认，历史 75p / 90p 备用按原记录显示。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
     "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",

@@ -17,24 +17,26 @@ const OTHER_SOURCE = "g1.ios.2tb.fixture_annual";
 const TWENTY = "g1.ios.20tb.m.v2";
 const THIRTY = "g1.ios.30tb.ai.pro.m";
 // Expected offers are explicit fixtures, independent of the scripts and builder.
-const VARIANTS = [
-  {
-    mode: "trial", script: "g1-acq.js", report: "g1-sku-report.js",
-    version: "g1-acq-v7.7-trial", label: "Ultra 1个月免费试用优先", fallbackName: "90p",
-    twentyTarget: "g1.20tb.1month_eft.acq", thirtyTarget: "g1.ai.ultra.1month_eft.acq",
-    twentyFallback: "g1.20tb.3months_ip_90p.acq", thirtyFallback: "g1.ai.ultra.3months_ip_90p.acq",
-    ignoredOffers: ["g1.20tb.3months_ip_75p.acq", "g1.ai.ultra.3months_ip_75p.acq"]
-  },
-  {
-    mode: "discount", script: "g1-acq-discount.js", report: "g1-sku-report-discount.js",
-    version: "g1-acq-v7.7-discount", label: "Ultra 三个月一折优先", fallbackName: "75p",
-    twentyTarget: "g1.20tb.3months_ip_90p.acq", thirtyTarget: "g1.ai.ultra.3months_ip_90p.acq",
-    twentyFallback: "g1.20tb.3months_ip_75p.acq", thirtyFallback: "g1.ai.ultra.3months_ip_75p.acq",
-    ignoredOffers: ["g1.20tb.1month_eft.acq", "g1.ai.ultra.1month_eft.acq"]
-  }
+const VERSION = "g1-acq-v7.8-75p";
+const MODE = "discount75";
+const REPORT_VERSION = "v7.8.0";
+const MODE_LABELS = {
+  trial: "Ultra 1个月免费试用优先（历史模式）",
+  discount: "Ultra 三个月一折优先（历史模式）",
+  discount75: "Ultra 三个月 75p（2.5折）"
+};
+const TWENTY_TARGET = "g1.20tb.3months_ip_75p.acq";
+const THIRTY_TARGET = "g1.ai.ultra.3months_ip_75p.acq";
+const ULTRA_OFFERS = [
+  "g1.20tb.1month_eft.acq", "g1.20tb.3months_ip_90p.acq", TWENTY_TARGET,
+  "g1.ai.ultra.1month_eft.acq", "g1.ai.ultra.3months_ip_90p.acq", THIRTY_TARGET
 ];
-const LEGACY_TWENTY_FALLBACK = "g1.20tb.3months_ip_75p.acq";
-const LEGACY_THIRTY_FALLBACK = "g1.ai.ultra.3months_ip_75p.acq";
+const VARIANTS = [
+  { script: "g1-acq.js", report: "g1-sku-report.js" },
+  { script: "g1-acq-discount.js", report: "g1-sku-report-discount.js" }
+];
+const LEGACY_TWENTY_FALLBACK = TWENTY_TARGET;
+const LEGACY_THIRTY_FALLBACK = THIRTY_TARGET;
 const source = Object.fromEntries(
   ["g1-acq.js", "g1-acq-discount.js", "g1-sku-scan.js", "g1-sku-report.js", "g1-sku-report-discount.js"].map(name =>
     [name, fs.readFileSync(path.join(root, name), "utf8")])
@@ -82,22 +84,20 @@ function get(storage, key) {
 
 function assertModeText(html, label, expected) {
   const visible = html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
-  assert.match(visible, new RegExp(label + "\\s*[：:]\\s*" + expected));
+  const escaped = expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(visible, new RegExp(label + "\\s*：\\s*" + escaped));
 }
 
 // Run the original response, persistence and report contracts through both entries.
 for (const variant of VARIANTS) {
-  const test = (name, fn) => nodeTest(variant.mode + ": " + name, fn);
-  const TWENTY_TARGET = variant.twentyTarget;
-  const THIRTY_TARGET = variant.thirtyTarget;
-  const TWENTY_FALLBACK = variant.twentyFallback;
-  const THIRTY_FALLBACK = variant.thirtyFallback;
+  const test = (name, fn) => nodeTest(variant.script + ": " + name, fn);
 
   test("combined module maps 2TB, 20TB and 30TB while preserving unrelated full tokens", () => {
     const untouched = [
       "g1.ios.12tb.fixture", TWENTY + ".extra", THIRTY + ".extra",
-      "g1.ios.2tbx.fixture", "prefix" + SOURCE, "x." + SOURCE,
-      "person@" + SOURCE, "g1.2tb", TARGET
+      "g1.ios.2tbx.fixture", "g1.ios.2tb.", "prefix" + SOURCE, "x." + SOURCE,
+      "person@" + SOURCE, "%" + SOURCE, "-" + SOURCE, "_" + SOURCE,
+      "prefix" + TWENTY, "person@" + THIRTY, TWENTY + "_extra", THIRTY + "-extra", "g1.2tb", TARGET
     ];
     const values = [SOURCE, OTHER_SOURCE, SOURCE, TWENTY, THIRTY, ...untouched];
     const result = run(variant.script, { body: JSON.stringify(values) });
@@ -106,7 +106,7 @@ for (const variant of VARIANTS) {
     assert.equal(record.hitCount, 5);
     assert.equal(record.annualHitCount, 3);
     assert.equal(record.status, "rewritten");
-    assert.equal(record.version, variant.version);
+    assert.equal(record.version, VERSION);
     assert.deepEqual(record.matchedFrom, [
       { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false },
       { id: OTHER_SOURCE, to: TARGET, count: 1, fallback: false },
@@ -128,92 +128,79 @@ for (const variant of VARIANTS) {
     }
   });
 
-  const offerCases = (target, backup) => [
-    { name: "neither", offers: [], to: target, fallback: false },
-    { name: "default", offers: [target], to: target, fallback: false },
-    { name: "backup", offers: [backup], to: backup, fallback: true },
-    { name: "both", offers: [target, backup], to: target, fallback: false }
-  ];
-  for (const twenty of offerCases(TWENTY_TARGET, TWENTY_FALLBACK)) {
-    for (const thirty of offerCases(THIRTY_TARGET, THIRTY_FALLBACK)) {
-      test("independent offers: 20TB=" + twenty.name + ", 30TB=" + thirty.name, () => {
-        const observed = [...twenty.offers, ...thirty.offers];
-        // Reversing offers catches a first-offer-wins implementation when both exist.
-        for (const offers of [observed, [...observed].reverse()]) {
-          const body = JSON.stringify([TWENTY, THIRTY, TWENTY, ...offers]);
-          const result = run(variant.script, { body });
-          assert.deepEqual(JSON.parse(result.payload.body), [twenty.to, thirty.to, twenty.to, ...offers]);
-          const record = get(result.storage, TEST_KEY);
-          assert.equal(record.schemaVersion, 1);
-          assert.equal(record.version, variant.version);
-          assert.equal(record.mode, variant.mode);
-          assert.equal(record.hitCount, 3);
-          assert.equal(record.annualHitCount, 0);
-          assert.equal(record.status, "rewritten");
-          assert.deepEqual(record.matchedFrom, [
-            { id: TWENTY, to: twenty.to, count: 2, fallback: twenty.fallback },
-            { id: THIRTY, to: thirty.to, count: 1, fallback: thirty.fallback }
-          ]);
-          const scan = get(result.storage, SCAN_KEY);
-          assert.equal(scan.schemaVersion, 1);
-          assert.equal(scan.version, variant.version);
-          assert.equal(scan.mode, variant.mode);
-          assert.deepEqual(scan.skus.map(row => row.id), [...new Set([TWENTY, THIRTY, ...offers])].sort());
-          assert.equal(scan.skus.find(row => row.id === TWENTY).count, 2);
-          assert.deepEqual(result.writes, [SCAN_KEY, TEST_KEY]);
-          assert.deepEqual([...result.storage.keys()], [SCAN_KEY, TEST_KEY]);
-          assert.equal(result.logs.filter(line => line.startsWith("[g1-acq] " + variant.version + " hits=")).length, 1);
-          assert(result.logs.includes("[g1-acq] " + variant.version + " hits=3 annualHits=0 mode=" + variant.mode));
-          const collectionLogs = result.logs.filter(line => line.startsWith("[g1-acq] " + variant.version + " status="));
-          assert.equal(collectionLogs.length, 1);
-          assert(collectionLogs[0].includes(" status=new-skus "));
-          assert(collectionLogs[0].endsWith(" mode=" + variant.mode));
-          assert(result.logs.indexOf(collectionLogs[0]) < result.logs.findIndex(line => line.includes(variant.version + " hits=")));
-          for (const [id, expected, count] of [[TWENTY, twenty, 2], [THIRTY, thirty, 1]]) {
-            assert(result.logs.includes("[g1-acq] " + id + " -> " + expected.to + " x" + count +
-              (expected.fallback ? " fallback=" + expected.to : "")));
-          }
+  test("all 64 combinations of six Ultra offers use fixed 75p targets without changing prices or dates", () => {
+    for (let mask = 0; mask < 64; mask++) {
+      const observed = ULTRA_OFFERS.filter((_, index) => mask & (1 << index));
+      // Exercise both offer orders so neither presence nor ordering can select a target.
+      for (const offers of [observed, [...observed].reverse()]) {
+        const body = JSON.stringify({
+          products: [TWENTY, THIRTY, TWENTY], offers,
+          price: 330, regularPrice: "3300.00", trialStart: "2026-11-23", regularStart: "2027-02-23"
+        }, null, 2);
+        const result = run(variant.script, { body });
+        assert.equal(result.payload.body, body.replaceAll(TWENTY, TWENTY_TARGET).replaceAll(THIRTY, THIRTY_TARGET), "offer mask=" + mask);
+        const record = get(result.storage, TEST_KEY);
+        assert.equal(record.schemaVersion, 1);
+        assert.equal(record.version, VERSION);
+        assert.equal(record.mode, MODE);
+        assert.equal(record.hitCount, 3);
+        assert.equal(record.annualHitCount, 0);
+        assert.equal(record.status, "rewritten");
+        assert.deepEqual(record.matchedFrom, [
+          { id: TWENTY, to: TWENTY_TARGET, count: 2, fallback: false },
+          { id: THIRTY, to: THIRTY_TARGET, count: 1, fallback: false }
+        ]);
+        const scan = get(result.storage, SCAN_KEY);
+        assert.equal(scan.schemaVersion, 1);
+        assert.equal(scan.version, VERSION);
+        assert.equal(scan.mode, MODE);
+        assert.deepEqual(scan.skus.map(row => row.id), [...new Set([TWENTY, THIRTY, ...offers])].sort());
+        assert.equal(scan.skus.find(row => row.id === TWENTY).count, 2);
+        assert.deepEqual(result.writes, [SCAN_KEY, TEST_KEY]);
+        assert.deepEqual([...result.storage.keys()], [SCAN_KEY, TEST_KEY]);
+        assert.equal(result.logs.filter(line => line.startsWith("[g1-acq] " + VERSION + " hits=")).length, 1);
+        assert(result.logs.includes("[g1-acq] " + VERSION + " hits=3 annualHits=0 mode=" + MODE));
+        const collectionLogs = result.logs.filter(line => line.startsWith("[g1-acq] " + VERSION + " status="));
+        assert.equal(collectionLogs.length, 1);
+        assert(collectionLogs[0].includes(" status=new-skus "));
+        assert(collectionLogs[0].endsWith(" mode=" + MODE));
+        assert(result.logs.indexOf(collectionLogs[0]) < result.logs.findIndex(line => line.includes(VERSION + " hits=")));
+        for (const [id, target, count] of [[TWENTY, TWENTY_TARGET, 2], [THIRTY, THIRTY_TARGET, 1]]) {
+          assert(result.logs.includes("[g1-acq] " + id + " -> " + target + " x" + count));
         }
-      });
+        assert(!result.logs.some(line => line.includes("fallback=")));
+      }
     }
-  }
-
-  test("offers belonging only to the other mode stay unchanged and never select a fallback", () => {
-    const observed = variant.ignoredOffers;
-    const result = run(variant.script, { body: JSON.stringify([SOURCE, TWENTY, THIRTY, ...observed]) });
-    assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TWENTY_TARGET, THIRTY_TARGET, ...observed]);
-    assert(get(result.storage, TEST_KEY).matchedFrom.every(row => row.fallback === false));
   });
 
-  test("fallback uses this response rather than saved offers and preserves price and date fields", () => {
-    const storage = new Map();
-    run(variant.script, { url: "https://one.google.com/plans", body: JSON.stringify([TWENTY_FALLBACK, THIRTY_FALLBACK]), storage });
-    for (const day of ["23", "24"]) {
-      const body = {
-        product: TWENTY,
-        trialStart: "2026-11-" + day,
-        regularStart: "2027-02-" + day,
-        price: 330,
-        regularPrice: 3300
-      };
-      const result = run(variant.script, { body: JSON.stringify(body), storage });
-      assert.deepEqual(JSON.parse(result.payload.body), { ...body, product: TWENTY_TARGET });
-      assert.equal(get(storage, TEST_KEY).matchedFrom[0].fallback, false);
-    }
-    const result = run(variant.script, { body: JSON.stringify([TWENTY, TWENTY_FALLBACK]), storage });
-    assert.deepEqual(JSON.parse(result.payload.body), [TWENTY_FALLBACK, TWENTY_FALLBACK]);
-    assert(result.logs.some(line => line.includes("fallback=" + TWENTY_FALLBACK)));
-    assert(!result.logs.some(line => /fallback=(?:75p|90p)(?:\s|$)/.test(line)));
+  test("existing acquisition IDs pass through unchanged with or without source IDs", () => {
+    const offers = [...ULTRA_OFFERS, "g1.20tb.fixture.acq", "g1.ai.ultra.fixture.acq", TARGET];
+    const untouched = run(variant.script, { body: JSON.stringify(offers) });
+    assert.deepEqual(untouched.payload, {});
+    assert.equal(get(untouched.storage, TEST_KEY).status, "no-match");
+    assert.deepEqual(get(untouched.storage, TEST_KEY).matchedFrom, []);
+    const mapped = run(variant.script, { body: JSON.stringify([SOURCE, TWENTY, THIRTY, ...offers]) });
+    assert.deepEqual(JSON.parse(mapped.payload.body), [TARGET, TWENTY_TARGET, THIRTY_TARGET, ...offers]);
+    assert(get(mapped.storage, TEST_KEY).matchedFrom.every(row => row.fallback === false));
+    assert(!mapped.logs.some(line => line.includes("fallback=")));
   });
 
-  test("fallback decisions are independent and the 2TB target stays fixed", () => {
-    const body = JSON.stringify([SOURCE, TWENTY, THIRTY, TWENTY_TARGET, TWENTY_FALLBACK, THIRTY_FALLBACK]);
-    const result = run(variant.script, { body });
-    assert.deepEqual(JSON.parse(result.payload.body).slice(0, 3), [TARGET, TWENTY_TARGET, THIRTY_FALLBACK]);
-    const rows = get(result.storage, TEST_KEY).matchedFrom;
-    assert.deepEqual(rows.find(row => row.id === SOURCE), { id: SOURCE, to: TARGET, count: 1, fallback: false });
-    assert.deepEqual(rows.find(row => row.id === TWENTY), { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false });
-    assert.deepEqual(rows.find(row => row.id === THIRTY), { id: THIRTY, to: THIRTY_FALLBACK, count: 1, fallback: true });
+  test("saved offers do not select targets and both Ultra tiers retain fixed 75p defaults", () => {
+    for (const savedOffers of [ULTRA_OFFERS.filter(id => !id.includes("75p")), [TWENTY_TARGET, THIRTY_TARGET]]) {
+      const storage = new Map();
+      run(variant.script, { url: "https://one.google.com/plans", body: JSON.stringify(savedOffers), storage });
+      for (const offers of [[], ULTRA_OFFERS.filter(id => !id.includes("75p")), ULTRA_OFFERS]) {
+        const result = run(variant.script, { body: JSON.stringify([SOURCE, TWENTY, THIRTY, ...offers]), storage });
+        assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TWENTY_TARGET, THIRTY_TARGET, ...offers]);
+        assert.deepEqual(get(storage, TEST_KEY).matchedFrom, [
+          { id: TWENTY, to: TWENTY_TARGET, count: 1, fallback: false },
+          { id: SOURCE, to: TARGET, count: 1, fallback: false },
+          { id: THIRTY, to: THIRTY_TARGET, count: 1, fallback: false }
+        ]);
+        for (const id of savedOffers) assert(get(storage, SCAN_KEY).skus.some(row => row.id === id));
+        assert(!result.logs.some(line => line.includes("fallback=")));
+      }
+    }
   });
 
   test("single module collects other Google pages without changing the last mapping record", () => {
@@ -243,7 +230,7 @@ for (const variant of VARIANTS) {
     const result = run(variant.script, { body });
     assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TARGET, TWENTY_TARGET, THIRTY_TARGET, "com.google.one.fixture"]);
     const scan = get(result.storage, SCAN_KEY);
-    assert.equal(scan.version, variant.version);
+    assert.equal(scan.version, VERSION);
     assert.deepEqual(scan.skus.map(row => row.id), ["com.google.one.fixture", TWENTY, SOURCE, THIRTY]);
     assert.equal(scan.skus.find(row => row.id === SOURCE).count, 2);
     assert.deepEqual(result.writes, [SCAN_KEY, TEST_KEY]);
@@ -309,7 +296,7 @@ for (const variant of VARIANTS) {
     assert.deepEqual(data.scan.recentResponses, scan.recentResponses);
     assert.equal(data.scan.nonTextResponses, 1);
     const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-    assert(html.includes("实际采集脚本：<code>" + variant.version + "</code>"));
+    assert(html.includes("实际采集脚本：<code>" + VERSION + "</code>"));
     assert(html.includes("编号与已有记录重复"));
     assert(html.includes("正文不是可扫描文本"));
   });
@@ -358,7 +345,7 @@ for (const variant of VARIANTS) {
     assert(html.includes("旧采集记录；尚未保存本版采集响应记录"));
     run(variant.script, { url: "https://one.google.com/plans", body: SOURCE, storage });
     data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
-    assert.equal(data.scan.version, variant.version);
+    assert.equal(data.scan.version, VERSION);
     assert.equal(data.scan.scannedResponses, 6);
     assert.equal(data.scan.matchedResponses, 2);
     assert.equal(data.scan.skus.length, 1);
@@ -374,7 +361,7 @@ for (const variant of VARIANTS) {
       candidateCount: 2, addedCount: 0, omittedCount: 0, body: "private-body", query: "private-token"
     };
     const storage = new Map([[SCAN_KEY, JSON.stringify({
-      schemaVersion: 1, version: variant.version,
+      schemaVersion: 1, version: VERSION,
       recentResponses: [event, { ...event, at: "<script>private</script>" }, { ...event, status: "constructor" }, { ...event, bodyType: "unknown" }]
     })]]);
     const result = run(variant.report, { url: REPORT + "?format=json", storage });
@@ -411,7 +398,7 @@ for (const variant of VARIANTS) {
     assert.match(payload.response.body, /Google One SKU 本地报告/);
     assert(payload.response.body.includes(SOURCE));
     assert(payload.response.body.includes(TARGET));
-    assert(payload.response.body.includes("本机脚本已接管 · v7.7.0"));
+    assert(payload.response.body.includes("本机脚本已接管 · v7.8.0"));
     assert.match(payload.response.body, /<button\b[^>]*name=format[^>]*value=json[^>]*>导出 JSON<\/button>/);
     assert(!/<(?:script|img|iframe)\b/i.test(payload.response.body));
     assert.equal(payload.response.headers["Cache-Control"], "no-store");
@@ -430,39 +417,46 @@ for (const variant of VARIANTS) {
       const result = run(variant.report, { url: exportURL, storage });
       assert.equal(result.payload.response.status, 200);
       assert.equal(result.payload.response.headers["Content-Disposition"], 'attachment; filename="g1-sku-report.json"');
-      assert.equal(result.payload.response.headers["X-G1-Report-Version"], "v7.7.0");
+      assert.equal(result.payload.response.headers["X-G1-Report-Version"], "v7.8.0");
       const data = JSON.parse(result.payload.response.body);
-      assert.equal(data.reportVersion, "v7.7.0");
+      assert.equal(data.reportVersion, "v7.8.0");
       assert.equal(data.configuredTarget, TARGET);
       assert.equal(data.test.target, TARGET);
       assert.equal(data.test.targetOrigin, "user-specified");
       assert.equal(data.scan.skus[0].id, SOURCE);
       assert.equal(data.test.matchedFrom[0].to, TARGET);
-      assert(result.logs.some(line => line.includes("[g1-sku-report] v7.7.0 json")));
+      assert(result.logs.some(line => line.includes("[g1-sku-report] v7.8.0 json")));
     }
   });
 
-  test("report exports each actual target and separates annual hits from total hits", () => {
+  test("report exports fixed 75p targets as non-fallback rows and separates annual hits from total hits", () => {
     const storage = new Map();
-    run(variant.script, {
-      body: JSON.stringify([SOURCE, TWENTY, THIRTY, THIRTY_FALLBACK]), storage
-    });
+    run(variant.script, { body: JSON.stringify([SOURCE, TWENTY, THIRTY, ...ULTRA_OFFERS]), storage });
     const result = run(variant.report, { url: REPORT + "?format=json", storage });
-    const data = JSON.parse(result.payload.response.body).test;
-    assert.equal(data.version, variant.version);
+    const report = JSON.parse(result.payload.response.body);
+    assert.equal(report.reportVersion, REPORT_VERSION);
+    assert.equal(report.configuredMode, MODE);
+    assert.equal(report.scan.mode, MODE);
+    const data = report.test;
+    assert.equal(data.version, VERSION);
+    assert.equal(data.mode, MODE);
     assert.equal(data.hitCount, 3);
     assert.equal(data.annualHitCount, 1);
-    assert.equal(data.matchedFrom.find(row => row.id === TWENTY).to, TWENTY_TARGET);
-    assert.deepEqual(data.matchedFrom.find(row => row.id === THIRTY), {
-      id: THIRTY, count: 1, to: THIRTY_FALLBACK, fallback: true
-    });
+    assert.deepEqual(data.matchedFrom, [
+      { id: TWENTY, count: 1, to: TWENTY_TARGET, fallback: false },
+      { id: SOURCE, count: 1, to: TARGET, fallback: false },
+      { id: THIRTY, count: 1, to: THIRTY_TARGET, fallback: false }
+    ]);
     const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
     assert(html.includes("最近一次三档映射"));
     assert(html.includes("其中 2TB：1"));
-    assert(html.includes(TWENTY_TARGET));
-    assert(html.includes(THIRTY_FALLBACK));
-    assert(html.includes(THIRTY_FALLBACK + "</code></td><td>" + variant.fallbackName + "</td>"));
-    assert(html.includes(variant.label));
+    for (const target of [TARGET, TWENTY_TARGET, THIRTY_TARGET]) {
+      assert(html.includes(target + "</code></td><td>否</td>"));
+    }
+    assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
+    assertModeText(html, "实际采集模式", MODE_LABELS[MODE]);
+    assertModeText(html, "实际映射模式", MODE_LABELS[MODE]);
+    assert(!html.includes("本版另一入口"));
   });
 
   test("report preserves historical 75p fallbacks and keeps old 90p defaults distinct", () => {
@@ -494,37 +488,44 @@ for (const variant of VARIANTS) {
     assert(html.includes("<code>未记录</code></td><td>是</td>"));
   });
 
-  test("new report displays existing v1 records with their original 2TB target", () => {
+  test("new report preserves implicit 2TB targets in v1, v2 and early v7 records", () => {
+    for (const version of ["pro-annual-test-v1", "pro-annual-test-v2", "g1-acq-v7", "g1-acq-v7.0", "g1-acq-v7.1"]) {
+      const stored = JSON.stringify({
+        schemaVersion: 1, version, hitCount: 2, status: "rewritten", matchedFrom: [{ id: SOURCE, count: 2 }]
+      });
+      const storage = new Map([[TEST_KEY, stored]]);
+      const result = run(variant.report, { url: REPORT + "?format=json", storage });
+      const data = JSON.parse(result.payload.response.body).test;
+      assert.equal(data.version, version);
+      assert.equal(data.mode, "");
+      assert.equal(data.hitCount, 2);
+      assert.equal(data.annualHitCount, 2);
+      assert.equal(data.target, LEGACY_TARGET);
+      assert.equal(data.targetOrigin, "legacy");
+      assert.deepEqual(data.matchedFrom, [{ id: SOURCE, count: 2, to: LEGACY_TARGET, fallback: false }]);
+      assert.equal(storage.get(TEST_KEY), stored);
+      assert.deepEqual(result.writes, []);
+    }
     const storage = new Map([[TEST_KEY, JSON.stringify({
-      schemaVersion: 1, version: "pro-annual-test-v1", hitCount: 2, status: "rewritten",
-      matchedFrom: [{ id: SOURCE, count: 2 }]
+      schemaVersion: 1, version: "pro-annual-test-v1", hitCount: 0, status: "no-match", matchedFrom: []
     })]]);
-    const result = run(variant.report, { url: REPORT + "?format=json", storage });
-    const data = JSON.parse(result.payload.response.body).test;
-    assert.equal(data.version, "pro-annual-test-v1");
-    assert.equal(data.hitCount, 2);
-    assert.equal(data.annualHitCount, 2);
-    assert.equal(data.target, LEGACY_TARGET);
-    assert.equal(data.targetOrigin, "legacy");
-    assert.deepEqual(data.matchedFrom, [{ id: SOURCE, count: 2, to: LEGACY_TARGET, fallback: false }]);
-    storage.set(TEST_KEY, JSON.stringify({
-      schemaVersion: 1, version: "pro-annual-test-v1", hitCount: 0,
-      status: "no-match", matchedFrom: []
-    }));
     const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
     assert(html.includes("旧 v1 记录：本次响应未命中 iOS 2TB 前缀"));
   });
 
-  test("report preserves saved v7.1 through v7.5 targets and origins independently of current configuration", () => {
+  test("report preserves saved v7.1 through v7.7 targets and origins independently of current configuration", () => {
     for (const prior of [
       { version: "g1-acq-v7.1", target: LEGACY_TARGET, origin: "legacy" },
       { version: "g1-acq-v7.2", target: "g1.2tb.ai.annual.3months_ip_90p.acq", origin: "pattern-derived" },
       { version: "g1-acq-v7.3", target: "g1.2tb.ai.annual_ip_90p.acq", origin: "user-specified" },
       { version: "g1-acq-v7.4", target: "g1.2tb.ai.annual_ip_90p.acq", origin: "user-specified" },
-      { version: "g1-acq-v7.5", target: TARGET, origin: "user-specified" }
+      { version: "g1-acq-v7.5", target: TARGET, origin: "user-specified" },
+      { version: "g1-acq-v7.6", target: TARGET, origin: "user-specified" },
+      { version: "g1-acq-v7.7-trial", mode: "trial", target: TARGET, origin: "user-specified" },
+      { version: "g1-acq-v7.7-discount", mode: "discount", target: TARGET, origin: "user-specified" }
     ]) {
       const record = {
-        schemaVersion: 1, version: prior.version, target: prior.target,
+        schemaVersion: 1, version: prior.version, mode: prior.mode, target: prior.target,
         status: "rewritten", hitCount: 9, annualHitCount: 9,
         matchedFrom: [{ id: "g1.ios.2tb.ai.a", to: prior.target, count: 9, fallback: false }]
       };
@@ -534,6 +535,7 @@ for (const variant of VARIANTS) {
       const data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
       assert.equal(data.configuredTarget, TARGET);
       assert.equal(data.test.version, prior.version);
+      assert.equal(data.test.mode, prior.mode || "");
       assert.equal(data.test.target, prior.target);
       assert.equal(data.test.targetOrigin, prior.origin);
       assert.equal(data.test.matchedFrom[0].to, prior.target);
@@ -565,6 +567,99 @@ for (const variant of VARIANTS) {
     assert(htmlResult.payload.response.body.includes("&lt;img src=x&gt;"));
   });
 
+  test("new collection and mapping timestamps remain UTC in storage, JSON and HTML", () => {
+    const result = run(variant.script, { body: SOURCE + " " + TWENTY });
+    const scan = get(result.storage, SCAN_KEY);
+    const record = get(result.storage, TEST_KEY);
+    for (const timestamp of [scan.updatedAt, record.updatedAt, ...scan.skus.map(row => row.lastSeen), ...scan.recentResponses.map(event => event.at)]) {
+      assert.match(timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      assert.equal(new Date(timestamp).toISOString(), timestamp);
+    }
+    assert(scan.skus.every(row => row.lastSeen === scan.updatedAt));
+    assert.equal(scan.recentResponses.at(-1).at, scan.updatedAt);
+    const data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage: result.storage }).payload.response.body);
+    assert.equal(data.scan.updatedAt, scan.updatedAt);
+    assert.equal(data.test.updatedAt, record.updatedAt);
+    assert.deepEqual(data.scan.skus, scan.skus);
+    assert.deepEqual(data.scan.recentResponses, scan.recentResponses);
+    const html = run(variant.report, { url: REPORT, storage: result.storage }).payload.response.body;
+    assert(html.includes("最近保存时间（UTC）：" + scan.updatedAt));
+    assert(html.includes("执行时间（UTC）：" + record.updatedAt));
+    assert(html.includes("最近发现时间（UTC）"));
+  });
+
+  test("report sanitizes missing and malformed saved fields without mutating either record", () => {
+    const storage = new Map([
+      [SCAN_KEY, JSON.stringify({
+        schemaVersion: 1, version: 42, mode: {}, updatedAt: [], scannedResponses: "3.9", matchedResponses: -1,
+        nonTextResponses: "invalid", truncated: "true", secret: "must-not-export", recentResponses: [null, {}],
+        skus: [null, { id: "invalid-id" }, { id: SOURCE, count: -2, lastSeen: {}, secret: "must-not-export" }]
+      })],
+      [TEST_KEY, JSON.stringify({
+        schemaVersion: 1, version: false, mode: "Discount75", target: "<img src=x>", targetOrigin: [], status: {},
+        hitCount: "3.9", annualHitCount: -1, secret: "must-not-export",
+        matchedFrom: [null, { id: "invalid-id" },
+          { id: TWENTY, to: "invalid-target", count: "2.9", fallback: "true", secret: "must-not-export" },
+          { id: SOURCE, to: TARGET, count: 1, fallback: 1 },
+          { id: THIRTY, to: THIRTY_TARGET, count: 1 }
+        ]
+      })]
+    ]);
+    const before = [...storage];
+    const result = run(variant.report, { url: REPORT + "?format=json", storage });
+    const data = JSON.parse(result.payload.response.body);
+    assert.equal(data.configuredMode, MODE);
+    assert.equal(data.scan.version, "");
+    assert.equal(data.scan.mode, "");
+    assert.equal(data.scan.updatedAt, "");
+    assert.equal(data.scan.scannedResponses, 3);
+    assert.equal(data.scan.matchedResponses, 0);
+    assert.equal(data.scan.nonTextResponses, 0);
+    assert.equal(data.scan.truncated, false);
+    assert.deepEqual(data.scan.recentResponses, []);
+    assert.deepEqual(data.scan.skus, [{ id: SOURCE, count: 0, lastSeen: "" }]);
+    assert.equal(data.test.version, "");
+    assert.equal(data.test.mode, "");
+    assert.equal(data.test.status, "");
+    assert.equal(data.test.hitCount, 3);
+    assert.equal(data.test.annualHitCount, 0);
+    assert.equal(data.test.target, TARGET);
+    assert.equal(data.test.targetOrigin, "user-specified");
+    assert.deepEqual(data.test.matchedFrom, [
+      { id: TWENTY, to: "", count: 2, fallback: false },
+      { id: SOURCE, to: TARGET, count: 1, fallback: false },
+      { id: THIRTY, to: THIRTY_TARGET, count: 1, fallback: false }
+    ]);
+    assert(!result.payload.response.body.includes("must-not-export"));
+    assert(!result.payload.response.body.includes("<img"));
+    assert.deepEqual(result.writes, []);
+    assert.deepEqual([...storage], before);
+  });
+
+  test("corrupt or mismatched schemas export empty records and recover only on real collection", () => {
+    for (const stored of ["corrupt JSON", "null", "[]", JSON.stringify({ schemaVersion: 2, mode: "trial", skus: [{ id: SOURCE, count: 9 }] })]) {
+      const storage = new Map([[SCAN_KEY, stored], [TEST_KEY, stored]]);
+      const result = run(variant.report, { url: REPORT + "?format=json", storage });
+      const data = JSON.parse(result.payload.response.body);
+      assert.equal(data.scan.mode, "");
+      assert.equal(data.test.mode, "");
+      assert.equal(data.scan.scannedResponses, 0);
+      assert.equal(data.test.hitCount, 0);
+      assert.deepEqual(data.scan.skus, []);
+      assert.deepEqual(data.test.matchedFrom, []);
+      assert.deepEqual([...storage], [[SCAN_KEY, stored], [TEST_KEY, stored]]);
+      run(variant.script, { url: "https://one.google.com/plans", body: SOURCE, storage });
+      assert.equal(storage.get(TEST_KEY), stored);
+      const scan = get(storage, SCAN_KEY);
+      assert.equal(scan.schemaVersion, 1);
+      assert.equal(scan.version, VERSION);
+      assert.equal(scan.mode, MODE);
+      assert.equal(scan.scannedResponses, 1);
+      assert.equal(scan.skus[0].count, 1);
+      assert.equal(scan.recentResponses.length, 1);
+    }
+  });
+
   test("clear action affects only the tool's two storage keys", () => {
     const storage = new Map([
       [SCAN_KEY, JSON.stringify({ schemaVersion: 1, skus: [{ id: SOURCE, count: 1 }] })],
@@ -588,53 +683,39 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("saved defaults never suppress a backup found in this response", () => {
-    const storage = new Map();
-    run(variant.script, {
-      url: "https://one.google.com/plans",
-      body: JSON.stringify([TWENTY_TARGET, THIRTY_TARGET]), storage
-    });
-    const result = run(variant.script, {
-      body: JSON.stringify([SOURCE, TWENTY, THIRTY, TWENTY_FALLBACK, THIRTY_FALLBACK]), storage
-    });
-    assert.deepEqual(JSON.parse(result.payload.body), [TARGET, TWENTY_FALLBACK, THIRTY_FALLBACK, TWENTY_FALLBACK, THIRTY_FALLBACK]);
-    assert.deepEqual(get(storage, TEST_KEY).matchedFrom, [
-      { id: TWENTY, to: TWENTY_FALLBACK, count: 1, fallback: true },
-      { id: SOURCE, to: TARGET, count: 1, fallback: false },
-      { id: THIRTY, to: THIRTY_FALLBACK, count: 1, fallback: true }
-    ]);
-    assert(get(storage, SCAN_KEY).skus.some(row => row.id === TWENTY_TARGET));
-    assert(get(storage, SCAN_KEY).skus.some(row => row.id === THIRTY_TARGET));
-  });
-
-  test("decoding a discovery copy never introduces a fallback into the original body", () => {
-    for (const [id, target, backup] of [
-      [TWENTY, TWENTY_TARGET, TWENTY_FALLBACK],
-      [THIRTY, THIRTY_TARGET, THIRTY_FALLBACK]
+  test("discovery decodes all historical and current offers without changing their original bytes", () => {
+    for (const [id, target, offers] of [
+      [TWENTY, TWENTY_TARGET, ULTRA_OFFERS.slice(0, 3)],
+      [THIRTY, THIRTY_TARGET, ULTRA_OFFERS.slice(3)]
     ]) {
-      for (const separator of [String.raw`\u002e`, String.raw`\x2e`, "&#46;", "&#x2e;", "&period;"]) {
-        const escaped = backup.replaceAll(".", separator);
-        const body = id + " " + escaped;
-        const result = run(variant.script, { body });
-        assert.equal(result.payload.body, target + " " + escaped);
-        assert.deepEqual(get(result.storage, TEST_KEY).matchedFrom, [{ id, to: target, count: 1, fallback: false }]);
-        assert.deepEqual(get(result.storage, SCAN_KEY).skus.map(row => row.id), [id, backup].sort());
+      for (const offer of offers) {
+        for (const separator of [String.raw`\u002e`, String.raw`\x2e`, "&#46;", "&#x2e;", "&period;"]) {
+          const escaped = offer.replaceAll(".", separator);
+          const body = id + " " + escaped;
+          const result = run(variant.script, { body });
+          assert.equal(result.payload.body, target + " " + escaped);
+          assert.deepEqual(get(result.storage, TEST_KEY).matchedFrom, [{ id, to: target, count: 1, fallback: false }]);
+          assert.deepEqual(get(result.storage, SCAN_KEY).skus.map(row => row.id), [id, offer].sort());
+          assert(!result.logs.some(line => line.includes("fallback=")));
+        }
       }
     }
   });
 
-  test("nested price and date fields survive both Ultra backup selections byte for byte", () => {
+  test("nested price and date fields survive all three fixed mappings byte for byte", () => {
     const body = JSON.stringify({
       products: [
         { sku: TWENTY, price: 330, regularPrice: 3300, currency: "TWD", trialStart: "2026-11-23", regularStart: "2027-02-23" },
         { sku: THIRTY, price: "490.00", regularPrice: "4900.00", currency: "TWD", trialStart: "2026-11-24", regularStart: "2027-02-24" },
         { sku: SOURCE, price: 65, regularPrice: 650, renewAt: "2027-11-23T00:00:00.000Z" }
       ],
-      offers: [TWENTY_FALLBACK, THIRTY_FALLBACK],
+      offers: ULTRA_OFFERS,
       invoice: { total: 885, generatedAt: "2026-11-23T00:00:00.000Z", account: "fixture@example.test" }
     }, null, 2);
     const result = run(variant.script, { body });
-    assert.equal(result.payload.body, body.replace(TWENTY, TWENTY_FALLBACK).replace(THIRTY, THIRTY_FALLBACK).replace(SOURCE, TARGET));
+    assert.equal(result.payload.body, body.replace(TWENTY, TWENTY_TARGET).replace(THIRTY, THIRTY_TARGET).replace(SOURCE, TARGET));
+    assert(get(result.storage, TEST_KEY).matchedFrom.every(row => row.fallback === false));
+    assert(!result.logs.some(line => line.includes("fallback=")));
     for (const value of result.storage.values()) {
       assert(!value.includes("fixture@example.test"));
       assert(!value.includes("regularPrice"));
@@ -649,91 +730,161 @@ for (const variant of VARIANTS) {
       const record = get(result.storage, TEST_KEY);
       assert.equal(scan.schemaVersion, 1);
       assert.equal(record.schemaVersion, 1);
-      assert.equal(scan.version, variant.version);
-      assert.equal(record.version, variant.version);
-      assert.equal(scan.mode, variant.mode);
-      assert.equal(record.mode, variant.mode);
+      assert.equal(scan.version, VERSION);
+      assert.equal(record.version, VERSION);
+      assert.equal(scan.mode, MODE);
+      assert.equal(record.mode, MODE);
       assert.equal(record.status, status);
       assert.equal(scan.recentResponses.at(-1).status, scanStatus);
       assert.deepEqual(record.matchedFrom, []);
       assert.deepEqual(result.payload, {});
-      assert(result.logs.includes("[g1-acq] " + variant.version + " hits=0 annualHits=0 mode=" + variant.mode));
-      assert(result.logs.some(line => line.startsWith("[g1-acq] " + variant.version + " status=" + scanStatus + " ") && line.endsWith(" mode=" + variant.mode)));
+      assert(result.logs.includes("[g1-acq] " + VERSION + " hits=0 annualHits=0 mode=" + MODE));
+      assert(result.logs.some(line => line.startsWith("[g1-acq] " + VERSION + " status=" + scanStatus + " ") && line.endsWith(" mode=" + MODE)));
     }
   });
 
-  test("switching entries accumulates original SKUs and preserves the previous mapping until a rewrite page arrives", () => {
-    const other = VARIANTS.find(entry => entry.mode !== variant.mode);
-    const storage = new Map();
-    run(variant.script, { body: JSON.stringify([SOURCE, TWENTY]), storage });
-    const previousTest = storage.get(TEST_KEY);
-    const firstScan = get(storage, SCAN_KEY);
-    const collection = run(other.script, {
-      url: "https://one.google.com/plans?fixture=2", body: JSON.stringify([SOURCE, THIRTY]), storage
-    });
-    assert.deepEqual(collection.payload, {});
-    assert.deepEqual(collection.writes, [SCAN_KEY]);
-    assert.equal(storage.get(TEST_KEY), previousTest);
-    const scan = get(storage, SCAN_KEY);
-    assert.equal(scan.mode, other.mode);
-    assert.equal(scan.version, other.version);
-    assert.equal(scan.scannedResponses, 2);
-    assert.equal(scan.matchedResponses, 2);
-    assert.deepEqual(scan.skus.map(row => [row.id, row.count]), [[TWENTY, 1], [SOURCE, 2], [THIRTY, 1]]);
-    assert.deepEqual(scan.recentResponses.slice(0, 1), firstScan.recentResponses);
-    assert.equal(scan.recentResponses.at(-1).addedCount, 1);
-    for (const reportEntry of VARIANTS) {
-      const before = [...storage];
-      const data = JSON.parse(run(reportEntry.report, { url: REPORT + "?format=json", storage }).payload.response.body);
-      assert.equal(data.configuredMode, reportEntry.mode);
-      assert.equal(data.scan.mode, other.mode);
-      assert.equal(data.test.mode, variant.mode);
-      assert.equal(data.test.version, variant.version);
-      assert.deepEqual(data.test.matchedFrom, get(storage, TEST_KEY).matchedFrom);
-      const html = run(reportEntry.report, { url: REPORT, storage }).payload.response.body;
-      assertModeText(html, "当前报告入口", reportEntry.label);
-      assertModeText(html, "实际采集模式", other.label);
-      assertModeText(html, "实际映射模式", variant.label);
-      assert.deepEqual([...storage], before);
+  test("v7.7 fixtures migrate scan first, preserve historical mappings and keep cumulative SKUs and ten FIFO arrivals", () => {
+    const other = VARIANTS.find(entry => entry.script !== variant.script);
+    for (const oldMode of ["trial", "discount"]) {
+      const oldVersion = "g1-acq-v7.7-" + oldMode;
+      const recentResponses = Array.from({ length: 10 }, (_, index) => ({
+        at: "2099-01-01T00:00:" + String(index).padStart(2, "0") + ".000Z",
+        path: index % 2 ? "/plans" : "/ai", bodyType: "text", status: "known-skus",
+        candidateCount: 2, addedCount: 0, omittedCount: 0
+      }));
+      const oldScan = {
+        schemaVersion: 1, version: oldVersion, mode: oldMode, updatedAt: recentResponses.at(-1).at,
+        scannedResponses: 12, matchedResponses: 11, nonTextResponses: 2, limit: 300, truncated: false,
+        recentResponses,
+        skus: [
+          { id: TWENTY, count: 3, lastSeen: recentResponses.at(-1).at },
+          { id: SOURCE, count: 7, lastSeen: recentResponses.at(-1).at },
+          { id: THIRTY, count: 2, lastSeen: recentResponses.at(-1).at }
+        ]
+      };
+      const oldTest = {
+        schemaVersion: 1, version: oldVersion, mode: oldMode, updatedAt: oldScan.updatedAt,
+        target: TARGET, targetOrigin: "user-specified", status: "rewritten", hitCount: 3, annualHitCount: 1,
+        matchedFrom: [
+          { id: TWENTY, to: oldMode === "trial" ? ULTRA_OFFERS[0] : ULTRA_OFFERS[1], count: 1, fallback: false },
+          { id: SOURCE, to: TARGET, count: 1, fallback: false },
+          { id: THIRTY, to: oldMode === "trial" ? ULTRA_OFFERS[4] : THIRTY_TARGET, count: 1, fallback: true }
+        ]
+      };
+      const storage = new Map([[SCAN_KEY, JSON.stringify(oldScan)], [TEST_KEY, JSON.stringify(oldTest)]]);
+      const previousTest = storage.get(TEST_KEY);
+      for (const reportEntry of VARIANTS) {
+        const before = [...storage];
+        const data = JSON.parse(run(reportEntry.report, { url: REPORT + "?format=json", storage }).payload.response.body);
+        assert.equal(data.configuredMode, MODE);
+        assert.equal(data.scan.version, oldVersion);
+        assert.equal(data.scan.mode, oldMode);
+        assert.equal(data.test.version, oldVersion);
+        assert.equal(data.test.mode, oldMode);
+        assert.deepEqual(data.scan.skus, oldScan.skus);
+        assert.deepEqual(data.scan.recentResponses, recentResponses);
+        assert.deepEqual(data.test.matchedFrom, oldTest.matchedFrom);
+        const html = run(reportEntry.report, { url: REPORT, storage }).payload.response.body;
+        assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
+        assertModeText(html, "实际采集模式", MODE_LABELS[oldMode]);
+        assertModeText(html, "实际映射模式", MODE_LABELS[oldMode]);
+        assert(html.includes("旧采集记录"));
+        assert(!html.includes("本版另一入口"));
+        const historicalFallback = oldTest.matchedFrom.at(-1);
+        assert(html.includes(historicalFallback.to + "</code></td><td>" + (oldMode === "trial" ? "90p" : "75p") + "</td>"));
+        assert.deepEqual([...storage], before);
+      }
+      const collection = run(variant.script, {
+        url: "https://one.google.com/plans?fixture=2", body: JSON.stringify([SOURCE, OTHER_SOURCE, THIRTY]), storage
+      });
+      assert.deepEqual(collection.payload, {});
+      assert.deepEqual(collection.writes, [SCAN_KEY]);
+      assert.equal(storage.get(TEST_KEY), previousTest);
+      const scan = get(storage, SCAN_KEY);
+      assert.equal(scan.schemaVersion, 1);
+      assert.equal(scan.mode, MODE);
+      assert.equal(scan.version, VERSION);
+      assert.equal(scan.scannedResponses, 13);
+      assert.equal(scan.matchedResponses, 12);
+      assert.equal(scan.nonTextResponses, 2);
+      assert.equal(scan.limit, 300);
+      assert.equal(scan.truncated, false);
+      assert.deepEqual(scan.skus.map(row => [row.id, row.count]), [[TWENTY, 3], [OTHER_SOURCE, 1], [SOURCE, 8], [THIRTY, 3]]);
+      assert.equal(scan.skus.find(row => row.id === TWENTY).lastSeen, oldScan.updatedAt);
+      assert.equal(scan.recentResponses.length, 10);
+      assert.deepEqual(scan.recentResponses.slice(0, -1), recentResponses.slice(1));
+      assert.equal(scan.recentResponses.at(-1).path, "/plans");
+      assert.equal(scan.recentResponses.at(-1).addedCount, 1);
+      for (const reportEntry of VARIANTS) {
+        const before = [...storage];
+        const data = JSON.parse(run(reportEntry.report, { url: REPORT + "?format=json", storage }).payload.response.body);
+        assert.equal(data.configuredMode, MODE);
+        assert.equal(data.scan.mode, MODE);
+        assert.equal(data.scan.version, VERSION);
+        assert.equal(data.test.mode, oldMode);
+        assert.equal(data.test.version, oldVersion);
+        assert.deepEqual(data.test.matchedFrom, oldTest.matchedFrom);
+        assert.deepEqual(data.scan.recentResponses, scan.recentResponses);
+        const html = run(reportEntry.report, { url: REPORT, storage }).payload.response.body;
+        assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
+        assertModeText(html, "实际采集模式", MODE_LABELS[MODE]);
+        assertModeText(html, "实际映射模式", MODE_LABELS[oldMode]);
+        assert(html.includes("记录来自本版采集脚本"));
+        assert(!html.includes("本版另一入口"));
+        assert.deepEqual([...storage], before);
+      }
+      const mapped = run(other.script, { body: JSON.stringify([OTHER_SOURCE, THIRTY]), storage });
+      assert.deepEqual(JSON.parse(mapped.payload.body), [TARGET, THIRTY_TARGET]);
+      assert.deepEqual(mapped.writes, [SCAN_KEY, TEST_KEY]);
+      assert.equal(get(storage, TEST_KEY).mode, MODE);
+      assert.equal(get(storage, TEST_KEY).version, VERSION);
+      assert.deepEqual(get(storage, TEST_KEY).matchedFrom, [
+        { id: OTHER_SOURCE, to: TARGET, count: 1, fallback: false },
+        { id: THIRTY, to: THIRTY_TARGET, count: 1, fallback: false }
+      ]);
+      const finalScan = get(storage, SCAN_KEY);
+      assert.equal(finalScan.schemaVersion, 1);
+      assert.equal(finalScan.version, VERSION);
+      assert.equal(finalScan.mode, MODE);
+      assert.equal(finalScan.scannedResponses, 14);
+      assert.equal(finalScan.matchedResponses, 13);
+      assert.equal(finalScan.nonTextResponses, 2);
+      assert.deepEqual(finalScan.skus.map(row => [row.id, row.count]), [[TWENTY, 3], [OTHER_SOURCE, 2], [SOURCE, 8], [THIRTY, 4]]);
+      assert.equal(finalScan.recentResponses.length, 10);
+      assert.deepEqual(finalScan.recentResponses.slice(0, -1), scan.recentResponses.slice(1));
+      assert.equal(finalScan.recentResponses.at(-1).path, "/ai");
+      assert.equal(finalScan.recentResponses.at(-1).status, "known-skus");
+      assert.deepEqual([...storage.keys()], [SCAN_KEY, TEST_KEY]);
     }
-    const mapped = run(other.script, { body: JSON.stringify([OTHER_SOURCE, THIRTY]), storage });
-    assert.deepEqual(JSON.parse(mapped.payload.body), [TARGET, other.thirtyTarget]);
-    assert.equal(get(storage, TEST_KEY).mode, other.mode);
-    assert.equal(get(storage, TEST_KEY).version, other.version);
-    const finalScan = get(storage, SCAN_KEY);
-    assert.equal(finalScan.schemaVersion, 1);
-    assert.equal(finalScan.scannedResponses, 3);
-    assert.equal(finalScan.matchedResponses, 3);
-    assert.deepEqual(finalScan.skus.map(row => [row.id, row.count]), [[TWENTY, 1], [OTHER_SOURCE, 1], [SOURCE, 2], [THIRTY, 2]]);
-    assert.deepEqual(finalScan.recentResponses.slice(0, 2), scan.recentResponses);
-    assert.deepEqual([...storage.keys()], [SCAN_KEY, TEST_KEY]);
   });
 
-  test("configuredMode is the report entry while saved scan and test modes remain independent", () => {
-    for (const scanEntry of VARIANTS) {
-      for (const testEntry of VARIANTS) {
-        const scanVersion = VARIANTS.find(entry => entry.mode !== scanEntry.mode).version;
-        const testVersion = VARIANTS.find(entry => entry.mode !== testEntry.mode).version;
+  test("configured discount75 is independent of all nine saved scan and test mode pairs", () => {
+    const mismatchedVersions = { trial: "g1-acq-v7.7-discount", discount: VERSION, discount75: "g1-acq-v7.7-trial" };
+    for (const scanMode of Object.keys(MODE_LABELS)) {
+      for (const testMode of Object.keys(MODE_LABELS)) {
+        const scanVersion = mismatchedVersions[scanMode];
+        const testVersion = mismatchedVersions[testMode];
         const storage = new Map([
-          [SCAN_KEY, JSON.stringify({ schemaVersion: 1, version: scanVersion, mode: scanEntry.mode, skus: [{ id: SOURCE, count: 4 }] })],
-          [TEST_KEY, JSON.stringify({ schemaVersion: 1, version: testVersion, mode: testEntry.mode, target: TARGET, matchedFrom: [{ id: SOURCE, to: TARGET, count: 4 }] })]
+          [SCAN_KEY, JSON.stringify({ schemaVersion: 1, version: scanVersion, mode: scanMode, skus: [{ id: SOURCE, count: 4 }] })],
+          [TEST_KEY, JSON.stringify({ schemaVersion: 1, version: testVersion, mode: testMode, target: TARGET, matchedFrom: [{ id: SOURCE, to: TARGET, count: 4 }] })]
         ]);
         const before = [...storage];
         const result = run(variant.report, { url: REPORT + "?format=json", storage });
         const data = JSON.parse(result.payload.response.body);
         assert.equal(data.schemaVersion, 1);
-        assert.equal(data.reportVersion, "v7.7.0");
-        assert.equal(data.configuredMode, variant.mode);
+        assert.equal(data.reportVersion, REPORT_VERSION);
+        assert.equal(data.configuredMode, MODE);
         assert.equal(data.configuredTarget, TARGET);
-        assert.equal(data.scan.mode, scanEntry.mode);
-        assert.equal(data.test.mode, testEntry.mode);
+        assert.equal(data.scan.mode, scanMode);
+        assert.equal(data.test.mode, testMode);
         assert.equal(data.scan.version, scanVersion);
         assert.equal(data.test.version, testVersion);
         assert.deepEqual(result.writes, []);
         const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-        assertModeText(html, "当前报告入口", variant.label);
-        assertModeText(html, "实际采集模式", scanEntry.label);
-        assertModeText(html, "实际映射模式", testEntry.label);
+        assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
+        assertModeText(html, "实际采集模式", MODE_LABELS[scanMode]);
+        assertModeText(html, "实际映射模式", MODE_LABELS[testMode]);
+        assert(!html.includes("本版另一入口"));
         assert.deepEqual([...storage], before);
       }
     }
@@ -743,39 +894,38 @@ for (const variant of VARIANTS) {
     const storage = new Map();
     const result = run(variant.report, { url: REPORT + "?format=json", storage });
     const data = JSON.parse(result.payload.response.body);
-    assert.equal(data.configuredMode, variant.mode);
+    assert.equal(data.configuredMode, MODE);
     assert.equal(data.scan.mode, "");
     assert.equal(data.test.mode, "");
     const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-    assertModeText(html, "当前报告入口", variant.label);
+    assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
     assertModeText(html, "实际采集模式", "未记录");
     assertModeText(html, "实际映射模式", "未记录");
     assert.equal(storage.size, 0);
   });
 
-  test("mode sanitization accepts only the exact saved trial and discount strings", () => {
+  test("mode sanitization accepts only exact trial, discount and discount75 strings", () => {
     const invalidModes = [
-      undefined, null, "", "Trial", "DISCOUNT", " trial", "trial ", "discount\n", "discount\u0000",
-      "unknown", "constructor", "__proto__", 0, 1, true, false, [], ["trial"], {},
-      { mode: "discount" }, "<img src=x onerror=fixture-mode>"
+      undefined, null, "", "Trial", "DISCOUNT", "Discount75", " trial", "trial ", "discount\n", "discount\u0000",
+      " discount75", "discount75 ", "discount75\n", "discount75\u0000", "75p", "unknown", "constructor", "__proto__",
+      0, 1, true, false, [], ["trial"], ["discount75"], {}, { mode: "discount75" }, "<img src=x onerror=fixture-mode>"
     ];
-    const other = VARIANTS.find(entry => entry.mode !== variant.mode);
     for (const invalid of invalidModes) {
       for (const field of ["scan", "test"]) {
         const storage = new Map([
-          [SCAN_KEY, JSON.stringify({ schemaVersion: 1, version: variant.version, mode: field === "scan" ? invalid : other.mode })],
-          [TEST_KEY, JSON.stringify({ schemaVersion: 1, version: variant.version, mode: field === "test" ? invalid : other.mode })]
+          [SCAN_KEY, JSON.stringify({ schemaVersion: 1, version: VERSION, mode: field === "scan" ? invalid : "trial" })],
+          [TEST_KEY, JSON.stringify({ schemaVersion: 1, version: VERSION, mode: field === "test" ? invalid : "discount" })]
         ]);
         const before = [...storage];
         const result = run(variant.report, { url: REPORT + "?format=json", storage });
         const data = JSON.parse(result.payload.response.body);
-        assert.equal(data.configuredMode, variant.mode);
+        assert.equal(data.configuredMode, MODE);
         assert.equal(data[field].mode, "", field + " mode=" + JSON.stringify(invalid));
-        assert.equal(data[field === "scan" ? "test" : "scan"].mode, other.mode);
+        assert.equal(data[field === "scan" ? "test" : "scan"].mode, field === "scan" ? "discount" : "trial");
         const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-        assertModeText(html, "当前报告入口", variant.label);
-        assertModeText(html, "实际采集模式", field === "scan" ? "未记录" : other.label);
-        assertModeText(html, "实际映射模式", field === "test" ? "未记录" : other.label);
+        assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
+        assertModeText(html, "实际采集模式", field === "scan" ? "未记录" : MODE_LABELS.trial);
+        assertModeText(html, "实际映射模式", field === "test" ? "未记录" : MODE_LABELS.discount);
         assert(!html.includes("fixture-mode"));
         assert(!result.payload.response.body.includes("fixture-mode"));
         assert.deepEqual([...storage], before);
@@ -783,22 +933,46 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("scan version labels distinguish this entry, the other v7.7 entry and older records", () => {
-    const other = VARIANTS.find(entry => entry.mode !== variant.mode);
-    for (const [version, expected, excluded] of [
-      [variant.version, "记录来自本版采集脚本", ["本版另一入口", "旧采集记录"]],
-      [other.version, "本版另一入口", ["记录来自本版采集脚本", "旧采集记录"]],
-      ["g1-acq-v7.6", "旧采集记录", ["记录来自本版采集脚本", "本版另一入口"]]
-    ]) {
-      const storage = new Map([[SCAN_KEY, JSON.stringify({ schemaVersion: 1, version, mode: variant.mode })]]);
+  test("stored modes are never inferred from current or historical version strings", () => {
+    for (const version of [VERSION, "g1-acq-v7.7-trial", "g1-acq-v7.7-discount"]) {
+      for (const mode of [undefined, "unknown"]) {
+        const stored = JSON.stringify({ schemaVersion: 1, version, mode });
+        const storage = new Map([[SCAN_KEY, stored], [TEST_KEY, stored]]);
+        const before = [...storage];
+        const data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
+        assert.equal(data.configuredMode, MODE);
+        assert.equal(data.scan.version, version);
+        assert.equal(data.test.version, version);
+        assert.equal(data.scan.mode, "");
+        assert.equal(data.test.mode, "");
+        const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
+        assertModeText(html, "实际采集模式", "未记录");
+        assertModeText(html, "实际映射模式", "未记录");
+        assert.deepEqual([...storage], before);
+      }
+    }
+  });
+
+  test("only the exact v7.8 75p collector version is labeled current in either report", () => {
+    const oldVersions = [
+      "pro-annual-test-v1", "pro-annual-test-v2", "g1-acq-v7", "g1-acq-v7.0", "g1-acq-v7.1",
+      "g1-acq-v7.2", "g1-acq-v7.3", "g1-acq-v7.4", "g1-acq-v7.5", "g1-acq-v7.6",
+      "g1-acq-v7.7-trial", "g1-acq-v7.7-discount", "g1-acq-v7.8", "g1-acq-v7.8-75p-extra", "g1-acq-v7.9-75p"
+    ];
+    for (const version of [VERSION, ...oldVersions]) {
+      const isCurrent = version === VERSION;
+      const mode = isCurrent ? "trial" : MODE;
+      const storage = new Map([[SCAN_KEY, JSON.stringify({ schemaVersion: 1, version, mode })]]);
       const before = [...storage];
       const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
       assert(html.includes("实际采集脚本：<code>" + version + "</code>"));
-      assert(html.includes(expected));
-      for (const phrase of excluded) assert(!html.includes(phrase));
+      assert.equal(html.includes("记录来自本版采集脚本"), isCurrent);
+      assert.equal(html.includes("旧采集记录"), !isCurrent);
+      assert(!html.includes("本版另一入口"));
+      assertModeText(html, "实际采集模式", MODE_LABELS[mode]);
       const data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
       assert.equal(data.scan.version, version);
-      assert.equal(data.scan.mode, variant.mode);
+      assert.equal(data.scan.mode, mode);
       assert.deepEqual([...storage], before);
     }
   });
@@ -819,7 +993,7 @@ for (const variant of VARIANTS) {
     const storage = new Map([[SCAN_KEY, JSON.stringify(oldScan)], [TEST_KEY, JSON.stringify(oldTest)]]);
     const before = [...storage];
     const data = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
-    assert.equal(data.configuredMode, variant.mode);
+    assert.equal(data.configuredMode, MODE);
     assert.equal(data.scan.version, "g1-acq-v7.6");
     assert.equal(data.test.version, "g1-acq-v7.6");
     assert.equal(data.scan.mode, "");
@@ -830,7 +1004,7 @@ for (const variant of VARIANTS) {
     assert(html.includes("旧采集记录"));
     assert(html.includes("g1.20tb.1month_eft.acq</code></td><td>否</td>"));
     assert(html.includes("g1.ai.ultra.3months_ip_90p.acq</code></td><td>90p</td>"));
-    assertModeText(html, "当前报告入口", variant.label);
+    assertModeText(html, "当前报告入口", MODE_LABELS[MODE]);
     assertModeText(html, "实际采集模式", "未记录");
     assertModeText(html, "实际映射模式", "未记录");
     assert.deepEqual([...storage], before);
@@ -838,13 +1012,13 @@ for (const variant of VARIANTS) {
     assert.deepEqual(collected.payload, {});
     assert.equal(storage.get(TEST_KEY), before[1][1]);
     const scan = get(storage, SCAN_KEY);
-    assert.equal(scan.version, variant.version);
-    assert.equal(scan.mode, variant.mode);
+    assert.equal(scan.version, VERSION);
+    assert.equal(scan.mode, MODE);
     assert.equal(scan.scannedResponses, 5);
     assert.equal(scan.matchedResponses, 4);
     assert.deepEqual(scan.skus.map(row => [row.id, row.count]), [[OTHER_SOURCE, 1], [SOURCE, 5]]);
     const after = JSON.parse(run(variant.report, { url: REPORT + "?format=json", storage }).payload.response.body);
-    assert.equal(after.scan.mode, variant.mode);
+    assert.equal(after.scan.mode, MODE);
     assert.equal(after.test.mode, "");
     assert.equal(after.test.version, "g1-acq-v7.6");
     assert.deepEqual(after.test.matchedFrom, oldTest.matchedFrom);
@@ -875,6 +1049,9 @@ nodeTest("collector discovers IDs and escaped dots while preserving the response
   const result = run("g1-sku-scan.js", { body });
   assert.deepEqual(result.payload, {});
   const state = get(result.storage, SCAN_KEY);
+  assert.equal(state.schemaVersion, 1);
+  assert.equal(state.version, "pro-annual-test-v2");
+  assert.equal(state.mode, undefined);
   assert.equal(state.scannedResponses, 1);
   assert.equal(state.matchedResponses, 1);
   assert.equal(state.skus.length, 5);
@@ -925,25 +1102,25 @@ nodeTest("collector passes through on storage failure", () => {
   assert(result.logs.some(line => line.includes("saved=no")));
 });
 
-nodeTest("all five modules pin v7.7.0 and pair each response entry with its own report", () => {
+nodeTest("exactly four modules pin v7.8.0 and pair the retained entries with their reports", () => {
   assert.equal(fs.existsSync(path.join(root, "g1-acq.sgmodule")), false);
-  const scriptBase = "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.7.0/";
+  assert.equal(fs.existsSync(path.join(root, "g1-acq-ultra-trial.sgmodule")), false);
+  const scriptBase = "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.8.0/";
   const modules = [
-    { file: "g1-acq-v7.sgmodule", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: true },
+    { file: "g1-acq-ultra-discount.sgmodule", name: "G1 ACQ Ultra 75p", script: "g1-acq-discount.js", report: "g1-sku-report-discount.js", allPaths: true },
+    { file: "g1-acq-v7.sgmodule", name: "G1 ACQ", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: true },
     { file: "g1-pro-annual-test.sgmodule", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: false },
-    { file: "g1-sku-scan.sgmodule", script: "g1-sku-scan.js", report: "g1-sku-report.js", allPaths: true },
-    { file: "g1-acq-ultra-trial.sgmodule", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: true },
-    { file: "g1-acq-ultra-discount.sgmodule", script: "g1-acq-discount.js", report: "g1-sku-report-discount.js", allPaths: true }
+    { file: "g1-sku-scan.sgmodule", script: "g1-sku-scan.js", report: "g1-sku-report.js", allPaths: true }
   ];
   assert.deepEqual(fs.readdirSync(root).filter(file => file.endsWith(".sgmodule")).sort(), modules.map(entry => entry.file).sort());
   for (const entry of modules) {
     const module = fs.readFileSync(path.join(root, entry.file), "utf8");
     const scripts = module.split("\n").filter(line => line.includes("script-path="));
     assert.equal(scripts.length, 2, entry.file);
-    if (entry.file === "g1-acq-v7.sgmodule") assert.match(module, /^#!name=G1 ACQ$/m);
+    if (entry.name) assert(module.split(/\r?\n/).includes("#!name=" + entry.name), entry.file);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.7\.0\/[a-z0-9.-]+\.js$/);
+      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.8\.0\/[a-z0-9.-]+\.js$/);
       assert.equal(url.slice(0, url.lastIndexOf("/") + 1), scriptBase);
       assert(fs.existsSync(path.join(root, url.split("/").at(-1))));
     }

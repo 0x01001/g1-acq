@@ -3,18 +3,15 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.7-discount";
-  var MODE = "discount";
+  var VERSION = "g1-acq-v7.8-75p";
+  var MODE = "discount75";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
   var TARGET = "g1.2tb.ai.12months_ip_90p";
+  // Ultra uses the remaining 75p offer directly, with no alternate offer selection.
   var SKU_MAP = {
-    "g1.ios.20tb.m.v2": "g1.20tb.3months_ip_90p.acq",
-    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.3months_ip_90p.acq"
-  };
-  var FALLBACK = {
-    "g1.20tb.3months_ip_90p.acq": "g1.20tb.3months_ip_75p.acq",
-    "g1.ai.ultra.3months_ip_90p.acq": "g1.ai.ultra.3months_ip_75p.acq"
+    "g1.ios.20tb.m.v2": "g1.20tb.3months_ip_75p.acq",
+    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.3months_ip_75p.acq"
   };
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";
@@ -47,28 +44,20 @@
   var out = body;
 
   if (typeof body === "string") {
-    // Select each tier's preferred or fallback SKU from the original response.
-    // These are observed strings, not a verified store catalog.
-    var observed = body.match(/g1\.[a-z0-9._]{2,60}acq/g) || [];
-    // Match complete tokens before selecting 2TB or the two existing source IDs.
+    // Match complete source tokens; other offer strings never change these targets.
     out = body.replace(
       /(^|[^A-Za-z0-9._@%-])(g1\.[A-Za-z0-9._-]+)(?=$|[^A-Za-z0-9._-])/g,
       function (match, before, id) {
         var isAnnual = id.indexOf(SOURCE_PREFIX) === 0 && id.length > SOURCE_PREFIX.length;
         var to;
-        var fallback = false;
         if (isAnnual) {
           to = TARGET;
         } else if (Object.prototype.hasOwnProperty.call(SKU_MAP, id)) {
           to = SKU_MAP[id];
-          if (observed.indexOf(to) === -1 && FALLBACK[to] && observed.indexOf(FALLBACK[to]) !== -1) {
-            to = FALLBACK[to];
-            fallback = true;
-          }
         } else {
           return match;
         }
-        if (!mappings[id]) mappings[id] = { id: id, to: to, count: 0, fallback: fallback };
+        if (!mappings[id]) mappings[id] = { id: id, to: to, count: 0, fallback: false };
         mappings[id].count += 1;
         hits += 1;
         if (isAnnual) annualHits += 1;
@@ -108,8 +97,7 @@
 
   console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits + " mode=" + MODE);
   sources.forEach(function (source) {
-    console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count +
-      (source.fallback ? " fallback=" + source.to : ""));
+    console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count);
   });
   $done(hits ? { body: out } : {});
 
