@@ -10,6 +10,7 @@ const TARGET = "g1.2tb.ai.12months_ip_90p";
 const LEGACY_TARGET = "g1.2tb.ai.annual";
 const SCAN_KEY = "g1.sku.scan.v1";
 const TEST_KEY = "g1.pro.annual.test.v1";
+const MAPPING_KEY = "g1.sku.mappings.v1";
 const REPORT = "https://one.google.com/g1-sku-report";
 // Fixture source IDs test the matching contract; they are not store catalog evidence.
 const SOURCE = "g1.ios.2tb.fixture_monthly";
@@ -17,13 +18,14 @@ const OTHER_SOURCE = "g1.ios.2tb.fixture_annual";
 const TWENTY = "g1.ios.20tb.m.v2";
 const THIRTY = "g1.ios.30tb.ai.pro.m";
 // Expected offers are explicit fixtures, independent of the scripts and builder.
-const VERSION = "g1-acq-v7.8-75p";
+const VERSION = "g1-acq-v7.9-mappings";
 const MODE = "discount75";
-const REPORT_VERSION = "v7.8.0";
+const REPORT_VERSION = "v7.9.0";
 const MODE_LABELS = {
   trial: "Ultra 1个月免费试用优先（历史模式）",
   discount: "Ultra 三个月一折优先（历史模式）",
-  discount75: "Ultra 三个月 75p（2.5折）"
+  discount75: "Ultra 三个月 75p（2.5折）",
+  custom: "手动映射"
 };
 const TWENTY_TARGET = "g1.20tb.3months_ip_75p.acq";
 const THIRTY_TARGET = "g1.ai.ultra.3months_ip_75p.acq";
@@ -51,7 +53,9 @@ function run(name, options = {}) {
   const context = {
     $request: {
       url: options.url || "https://one.google.com/ai?fixture=1",
-      headers: { Cookie: "cookie-secret", Authorization: "auth-secret" }
+      method: options.method || "GET",
+      body: options.requestBody,
+      headers: options.headers || { Cookie: "cookie-secret", Authorization: "auth-secret" }
     },
     $response: { body: options.body, headers: { "x-private": "response-secret" } },
     $done: payload => calls.push(JSON.parse(JSON.stringify(payload))),
@@ -60,8 +64,8 @@ function run(name, options = {}) {
   if (options.storageAvailable !== false) {
     context.$persistentStore = {
       read(key) {
-        if (options.storageThrows) throw new Error("fixture storage failure");
         reads.push(key);
+        if (options.storageThrows || options.storageReadThrows) throw new Error("fixture storage failure");
         return storage.get(key) || null;
       },
       write(value, key) {
@@ -372,11 +376,22 @@ for (const variant of VARIANTS) {
     assert(!result.payload.response.body.includes("private"));
   });
 
-  test("storage errors do not prevent a matched response from completing", () => {
-    for (const flags of [{ storageAvailable: false }, { storageThrows: true }, { storageWriteFails: true }]) {
+  test("unreadable settings pass through while record-write failure preserves valid default rewriting", () => {
+    for (const flags of [{ storageAvailable: false }, { storageThrows: true }, { storageReadThrows: true }]) {
       const result = run(variant.script, { body: SOURCE, ...flags });
-      assert.equal(result.payload.body, TARGET);
+      assert.deepEqual(result.payload, {});
+      if (flags.storageReadThrows) {
+        const record = get(result.storage, TEST_KEY);
+        assert.equal(record.status, "config-error");
+        assert.equal(record.mappingStatus, "unavailable");
+        assert.equal(record.mappingRevision, "unavailable");
+        assert.equal(record.mode, "");
+        assert.equal(record.hitCount, 0);
+        assert.deepEqual(record.matchedFrom, []);
+      }
     }
+    const writeFailure = run(variant.script, { body: SOURCE, storageWriteFails: true });
+    assert.equal(writeFailure.payload.body, TARGET);
   });
 
   test("test records omit cookies, headers and full response data", () => {
@@ -384,7 +399,9 @@ for (const variant of VARIANTS) {
     const saved = result.storage.get(TEST_KEY);
     assert(!saved.includes("private@example.test"));
     assert(!saved.includes("secret"));
-    assert.deepEqual(result.reads, [SCAN_KEY]);
+    assert.deepEqual(new Set(result.reads), new Set([SCAN_KEY, MAPPING_KEY]));
+    assert.equal(result.reads.filter(key => key === MAPPING_KEY).length, 1);
+    assert(!result.writes.includes(MAPPING_KEY));
     assert(!result.storage.get(SCAN_KEY).includes("private@example.test"));
     assert(!result.storage.get(SCAN_KEY).includes("secret"));
   });
@@ -395,10 +412,10 @@ for (const variant of VARIANTS) {
     run(variant.script, { body: SOURCE, storage });
     const { payload } = run(variant.report, { url: REPORT, storage });
     assert.equal(payload.response.status, 200);
-    assert.match(payload.response.body, /Google One SKU 本地报告/);
+    assert.match(payload.response.body, /Google One SKU 管理/);
     assert(payload.response.body.includes(SOURCE));
     assert(payload.response.body.includes(TARGET));
-    assert(payload.response.body.includes("本机脚本已接管 · v7.8.0"));
+    assert(payload.response.body.includes("本机脚本已接管 · v7.9.0"));
     assert.match(payload.response.body, /<button\b[^>]*name=format[^>]*value=json[^>]*>导出 JSON<\/button>/);
     assert(!/<(?:script|img|iframe)\b/i.test(payload.response.body));
     assert.equal(payload.response.headers["Cache-Control"], "no-store");
@@ -417,15 +434,15 @@ for (const variant of VARIANTS) {
       const result = run(variant.report, { url: exportURL, storage });
       assert.equal(result.payload.response.status, 200);
       assert.equal(result.payload.response.headers["Content-Disposition"], 'attachment; filename="g1-sku-report.json"');
-      assert.equal(result.payload.response.headers["X-G1-Report-Version"], "v7.8.0");
+      assert.equal(result.payload.response.headers["X-G1-Report-Version"], "v7.9.0");
       const data = JSON.parse(result.payload.response.body);
-      assert.equal(data.reportVersion, "v7.8.0");
+      assert.equal(data.reportVersion, "v7.9.0");
       assert.equal(data.configuredTarget, TARGET);
       assert.equal(data.test.target, TARGET);
       assert.equal(data.test.targetOrigin, "user-specified");
       assert.equal(data.scan.skus[0].id, SOURCE);
       assert.equal(data.test.matchedFrom[0].to, TARGET);
-      assert(result.logs.some(line => line.includes("[g1-sku-report] v7.8.0 json")));
+      assert(result.logs.some(line => line.includes("[g1-sku-report] v7.9.0 json")));
     }
   });
 
@@ -448,7 +465,7 @@ for (const variant of VARIANTS) {
       { id: THIRTY, count: 1, to: THIRTY_TARGET, fallback: false }
     ]);
     const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-    assert(html.includes("最近一次三档映射"));
+    assert.match(html, /最近一次[^<]*映射/);
     assert(html.includes("其中 2TB：1"));
     for (const target of [TARGET, TWENTY_TARGET, THIRTY_TARGET]) {
       assert(html.includes(target + "</code></td><td>否</td>"));
@@ -541,7 +558,7 @@ for (const variant of VARIANTS) {
       assert.equal(data.test.matchedFrom[0].to, prior.target);
       assert.equal(storage.get(TEST_KEY), before);
       const html = run(variant.report, { url: REPORT, storage }).payload.response.body;
-      assert(html.includes("当前配置的 2TB 候选目标：<code>" + TARGET + "</code>"));
+      assert(html.includes("当前配置的 2TB 前缀目标：<code>" + TARGET + "</code>"));
       assert(html.includes("该次记录的 2TB 目标：<code>" + prior.target + "</code>"));
     }
     const empty = JSON.parse(run(variant.report, { url: REPORT + "?format=json" }).payload.response.body);
@@ -670,7 +687,8 @@ for (const variant of VARIANTS) {
     assert.deepEqual(get(storage, SCAN_KEY), {});
     assert.deepEqual(get(storage, TEST_KEY), {});
     assert.equal(storage.get("other-tool"), "untouched");
-    assert.deepEqual(new Set(result.reads), new Set([SCAN_KEY, TEST_KEY]));
+    assert.deepEqual(new Set(result.reads), new Set([SCAN_KEY, TEST_KEY, MAPPING_KEY]));
+    assert(!result.writes.includes(MAPPING_KEY));
   });
 
   test("report handles unavailable storage and skips other URL paths", () => {
@@ -858,8 +876,8 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("configured discount75 is independent of all nine saved scan and test mode pairs", () => {
-    const mismatchedVersions = { trial: "g1-acq-v7.7-discount", discount: VERSION, discount75: "g1-acq-v7.7-trial" };
+  test("configured discount75 is independent of all sixteen saved scan and test mode pairs", () => {
+    const mismatchedVersions = { trial: "g1-acq-v7.7-discount", discount: VERSION, discount75: "g1-acq-v7.7-trial", custom: "g1-acq-v7.8-75p" };
     for (const scanMode of Object.keys(MODE_LABELS)) {
       for (const testMode of Object.keys(MODE_LABELS)) {
         const scanVersion = mismatchedVersions[scanMode];
@@ -904,10 +922,11 @@ for (const variant of VARIANTS) {
     assert.equal(storage.size, 0);
   });
 
-  test("mode sanitization accepts only exact trial, discount and discount75 strings", () => {
+  test("mode sanitization accepts only exact trial, discount, discount75 and custom strings", () => {
     const invalidModes = [
       undefined, null, "", "Trial", "DISCOUNT", "Discount75", " trial", "trial ", "discount\n", "discount\u0000",
       " discount75", "discount75 ", "discount75\n", "discount75\u0000", "75p", "unknown", "constructor", "__proto__",
+      "Custom", "CUSTOM", " custom", "custom ", "custom\n", "custom\u0000", ["custom"], { mode: "custom" },
       0, 1, true, false, [], ["trial"], ["discount75"], {}, { mode: "discount75" }, "<img src=x onerror=fixture-mode>"
     ];
     for (const invalid of invalidModes) {
@@ -953,11 +972,12 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("only the exact v7.8 75p collector version is labeled current in either report", () => {
+  test("only the exact v7.9 mappings collector version is labeled current in either report", () => {
     const oldVersions = [
       "pro-annual-test-v1", "pro-annual-test-v2", "g1-acq-v7", "g1-acq-v7.0", "g1-acq-v7.1",
       "g1-acq-v7.2", "g1-acq-v7.3", "g1-acq-v7.4", "g1-acq-v7.5", "g1-acq-v7.6",
-      "g1-acq-v7.7-trial", "g1-acq-v7.7-discount", "g1-acq-v7.8", "g1-acq-v7.8-75p-extra", "g1-acq-v7.9-75p"
+      "g1-acq-v7.7-trial", "g1-acq-v7.7-discount", "g1-acq-v7.8", "g1-acq-v7.8-75p", "g1-acq-v7.8-75p-extra",
+      "g1-acq-v7.9-75p", "g1-acq-v7.9-mappings-extra"
     ];
     for (const version of [VERSION, ...oldVersions]) {
       const isCurrent = version === VERSION;
@@ -1102,15 +1122,15 @@ nodeTest("collector passes through on storage failure", () => {
   assert(result.logs.some(line => line.includes("saved=no")));
 });
 
-nodeTest("exactly four modules pin v7.8.0 and pair the retained entries with their reports", () => {
+nodeTest("exactly four modules pin v7.9.0 and pair the retained entries with their reports", () => {
   assert.equal(fs.existsSync(path.join(root, "g1-acq.sgmodule")), false);
   assert.equal(fs.existsSync(path.join(root, "g1-acq-ultra-trial.sgmodule")), false);
-  const scriptBase = "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.8.0/";
+  const scriptBase = "https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/";
   const modules = [
-    { file: "g1-acq-ultra-discount.sgmodule", name: "G1 ACQ Ultra 75p", script: "g1-acq-discount.js", report: "g1-sku-report-discount.js", allPaths: true },
+    { file: "g1-acq-ultra-discount.sgmodule", name: "G1 ACQ SKU 管理", script: "g1-acq-discount.js", report: "g1-sku-report-discount.js", allPaths: true },
     { file: "g1-acq-v7.sgmodule", name: "G1 ACQ", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: true },
-    { file: "g1-pro-annual-test.sgmodule", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: false },
-    { file: "g1-sku-scan.sgmodule", script: "g1-sku-scan.js", report: "g1-sku-report.js", allPaths: true }
+    { file: "g1-pro-annual-test.sgmodule", name: "G1 Pro Annual Test", script: "g1-acq.js", report: "g1-sku-report.js", allPaths: false },
+    { file: "g1-sku-scan.sgmodule", name: "G1 SKU Scan", script: "g1-sku-scan.js", report: "g1-sku-report.js", allPaths: true }
   ];
   assert.deepEqual(fs.readdirSync(root).filter(file => file.endsWith(".sgmodule")).sort(), modules.map(entry => entry.file).sort());
   for (const entry of modules) {
@@ -1120,11 +1140,12 @@ nodeTest("exactly four modules pin v7.8.0 and pair the retained entries with the
     if (entry.name) assert(module.split(/\r?\n/).includes("#!name=" + entry.name), entry.file);
     for (const script of scripts) {
       const url = script.match(/script-path=([^,\s]+)/)[1];
-      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.8\.0\/[a-z0-9.-]+\.js$/);
+      assert.match(url, /^https:\/\/cdn\.jsdelivr\.net\/gh\/crhywun\/g1-acq@v7\.9\.0\/[a-z0-9.-]+\.js$/);
       assert.equal(url.slice(0, url.lastIndexOf("/") + 1), scriptBase);
       assert(fs.existsSync(path.join(root, url.split("/").at(-1))));
     }
     assert.match(module, /hostname = %APPEND% one\.google\.com/);
+    assert(module.split(/\r?\n/).includes("AND,((PROTOCOL,UDP),(DEST-PORT,443)),REJECT-NO-DROP"), entry.file);
     const responseLines = scripts.filter(line => line.includes("type=http-response"));
     const requestLines = scripts.filter(line => line.includes("type=http-request"));
     assert.equal(responseLines.length, 1, entry.file);
@@ -1135,6 +1156,8 @@ nodeTest("exactly four modules pin v7.8.0 and pair the retained entries with the
     assert.equal(requestLine.match(/script-path=([^,\s]+)/)[1], scriptBase + entry.report, entry.file);
     assert.match(responseLine, /(?:^|,)requires-body=1(?:,|$)/);
     assert.match(responseLine, /(?:^|,)max-size=0(?:,|$)/);
+    assert.match(requestLine, /(?:^|,)requires-body=1(?:,|$)/);
+    assert.match(requestLine, /(?:^|,)max-size=0(?:,|$)/);
     const pattern = new RegExp(responseLine.match(/pattern=([^,]+)/)[1]);
     assert(pattern.test("https://one.google.com/ai?x=1"), entry.file);
     for (const url of ["https://one.google.com/", "https://one.google.com/plans", "https://one.google.com/ai", "https://one.google.com/ai/other?x=1", "https://one.google.com/_/fixture/data/batchexecute"]) {
