@@ -26,6 +26,36 @@ function createG1MappingConfig(store) {
     ];
   }
 
+  function presets() {
+    return [
+      {
+        id: "tr-ultra-30tb",
+        title: "土区 30TB · 2949.99 里拉记录",
+        description: "旧 iOS 30TB 编号；公开记录曾调起 2949.99 里拉报价，实际金额与周期查看 App Store。",
+        rules: [
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ios.30tb.m", enabled: true }
+        ]
+      },
+      {
+        id: "ultra-75p",
+        title: "Ultra 20TB / 30TB · 三个月 75p",
+        description: "20TB 与 30TB 一起切换到现有 75p 目标；75p 表示减免 75%，实付 25%。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: "g1.20tb.3months_ip_75p.acq", enabled: true },
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ai.ultra.3months_ip_75p.acq", enabled: true }
+        ]
+      },
+      {
+        id: "pro-12months-90p",
+        title: "2TB / Pro · 12个月 90p",
+        description: "使用现有 2TB 前缀和 12个月优惠目标；商品周期按 App Store 购买面板显示。",
+        rules: [
+          { match: "prefix", from: SOURCE_PREFIX, to: "g1.2tb.ai.12months_ip_90p", enabled: true }
+        ]
+      }
+    ];
+  }
+
   function validSku(value) {
     return typeof value === "string" &&
       /^(?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]{0,159}[A-Za-z0-9_-]$(?![\s\S])/.test(value);
@@ -190,6 +220,52 @@ function createG1MappingConfig(store) {
     return saveResult(200, "", verified);
   }
 
+  function applyPreset(expectedRevision, presetId) {
+    var current = read();
+    if (current.status === "unavailable") return saveResult(503, READ_ERROR, current);
+    if (typeof expectedRevision !== "string" || expectedRevision !== current.revision) {
+      return saveResult(409, REVISION_ERROR, current);
+    }
+    if (current.status === "invalid") return saveResult(400, CONFIG_ERROR, current);
+
+    var selected = null;
+    presets().some(function (preset) {
+      if (preset.id !== presetId) return false;
+      selected = preset;
+      return true;
+    });
+    if (!selected) return saveResult(400, "映射模板不存在，请刷新管理页后重试。", current);
+
+    var rules = current.rules.slice();
+    var ids = Object.create(null);
+    var positions = Object.create(null);
+    rules.forEach(function (rule, index) {
+      ids[rule.id] = true;
+      positions[rule.match + ":" + rule.from] = index;
+    });
+    selected.rules.forEach(function (rule) {
+      var source = rule.match + ":" + rule.from;
+      var position = positions[source];
+      var id;
+      if (typeof position === "number") {
+        id = rules[position].id;
+      } else {
+        var base = newId();
+        id = base;
+        // There are at most rules.length occupied candidates, even if randomness repeats.
+        for (var suffix = 1; suffix <= rules.length && ids[id]; suffix += 1) id = base + "-" + suffix;
+        ids[id] = true;
+        position = rules.length;
+        positions[source] = position;
+      }
+      rules[position] = { id: id, match: rule.match, from: rule.from, to: rule.to, enabled: true };
+    });
+
+    var checked = validateRules(rules);
+    if (!checked.ok) return saveResult(400, checked.error, current);
+    return save(expectedRevision, checked.rules, false);
+  }
+
   function resolve(id, state) {
     if (!validSku(id) || !state || (state.status !== "default" && state.status !== "custom") ||
         !Array.isArray(state.rules)) return null;
@@ -208,18 +284,20 @@ function createG1MappingConfig(store) {
     key: KEY,
     limit: LIMIT,
     defaults: defaults,
+    presets: presets,
     validSku: validSku,
     validateRules: validateRules,
     newId: newId,
     read: read,
     save: save,
+    applyPreset: applyPreset,
     resolve: resolve
   };
 }
 // END GENERATED MAPPING CONFIG
 
 (function () {
-  var VERSION = "g1-acq-v7.9-mappings";
+  var VERSION = "g1-acq-v7.10-mappings";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";

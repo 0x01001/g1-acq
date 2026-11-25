@@ -6,37 +6,57 @@
 
 Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **Shadowrocket / 小火箭**。
 
-**v7.9.0 主模块为 G1 ACQ SKU 管理。** 现有[本地报告页](https://one.google.com/g1-sku-report)升级为 **Google One SKU 管理**，支持添加、编辑、勾选启用、逐条保存、删除映射和恢复默认；采集列表可预填源，源与目标输入框提供已采集 SKU 候选。保存留在手机本地，**下一次 `/ai?` 响应才使用新规则**，已打开或缓存的方案页需重新进入。
+**v7.10.0 主模块为 G1 ACQ SKU 管理，新增三套预制映射模板。** 打开[本地报告页](https://one.google.com/g1-sku-report)，在 **预制映射模板** 中点击 **应用模板**，即可直接合并并保存到手机本地，无需再填源、目标或另点保存。页面继续支持添加、编辑、勾选启用、逐条保存、删除映射和恢复默认；采集列表可预填源，输入框提供已采集 SKU 与模板目标候选。**点击时保存配置，下一次 `/ai?` 响应才使用新规则**，已打开或缓存的方案页需重新进入。
 
-默认模式 `discount75` 保留 20TB / 30TB 三个月 75p 和原始 iOS 2TB → `g1.2tb.ai.12months_ip_90p`；保存手动规则后为 `custom`。**75p = 75% off、实付 25%、2.5折**。当前改写运行版本为 `g1-acq-v7.9-mappings`，保留原始 SKU 采集、最近 10 次响应、重复诊断与 JSON 导出，无需另装扫描器；完整步骤见 [SKU 管理、Pro 12个月优惠测试与采集](docs/pro-annual-test.md)。
+默认模式 `discount75` 保留 20TB / 30TB 三个月 75p 和原始 iOS 2TB → `g1.2tb.ai.12months_ip_90p`；应用模板或保存手动规则后为 `custom`，即使模板目标恰好与默认相同。**75p = 75% off、实付 25%、2.5折**。当前改写运行版本为 `g1-acq-v7.10-mappings`，保留原始 SKU 采集、最近 10 次响应、重复诊断与 JSON 导出，无需另装扫描器；完整步骤见 [SKU 管理、Pro 12个月优惠测试与采集](docs/pro-annual-test.md)。
 
 采集只读取手机实际收到的匹配响应，**不会主动查询全量 SKU**；旧 ID 再次出现时累加次数。字符串改写与 App Store 商品返回分别记录，商品名称、周期、初次与续费金额按收银台实际显示核对，权益按 Google One 账户实际状态记录。
 
 ## 主模块安装地址
 
-**G1 ACQ SKU 管理 — 本地手动映射，保留默认 75p 与 2TB 目标**
+**G1 ACQ SKU 管理 — 三套预制模板与本地手动映射，保留默认 75p 与 2TB 目标**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.10.0/g1-acq-ultra-discount.sgmodule
 ```
 
 | 项目 | 当前主入口 |
 |---|---|
-| 当前配置 `configuredMode` | 默认 `discount75`；保存手动规则后 `custom` |
+| 当前配置 `configuredMode` | 默认 `discount75`；应用模板或保存手动规则后 `custom` |
 | 响应脚本 | [g1-acq-discount.js](g1-acq-discount.js)，与 [g1-acq.js](g1-acq.js) 实现相同 |
-| 响应运行版本 | `g1-acq-v7.9-mappings` |
+| 响应运行版本 | `g1-acq-v7.10-mappings` |
 | 报告脚本 | [g1-sku-report-discount.js](g1-sku-report-discount.js)，与 [g1-sku-report.js](g1-sku-report.js) 实现相同 |
-| 报告版本 | `v7.9.0` |
+| 报告版本 | `v7.10.0` |
 | 默认 2TB 目标 | `g1.2tb.ai.12months_ip_90p`，无 `.acq` |
-| 本地数据 | 原采集 / 执行两键 schema 1，新增独立映射键 `g1.sku.mappings.v1` |
+| 本地数据 | 沿用 v7.9 的三个 schema 1 键；模板结果仍保存在 `g1.sku.mappings.v1`，无数据迁移 |
 
 首次安装时在小火箭模块管理中添加上方地址并启用。升级顺序为：**关闭旧模块 → 安装新地址 → 只开启 G1 ACQ SKU 管理一个改写入口 → 重新连接小火箭 → 重新打开 Google App 的方案页**。曾安装 **G1 ACQ Ultra 75p**、**G1 ACQ**、**G1 ACQ Ultra 一折**、**G1 ACQ Ultra 试用**、独立 **G1 SKU Scan**、**G1 Pro Annual Test** 或其它改写副本时，停用旧副本，避免重复计数或改写。
 
-安装入口与全部内部脚本固定引用 `@v7.9.0`，无需单独添加脚本。**旧固定链接需换成新地址，不会自动更新。** 当前树保留四个模块，试用模块仍缺席；历史 `v7.8.0` / `v7.7.0` / `v7.6.0` / `v7.5.0` / `v7.4.0` / `v7.3.0` / `v7.2.0` / `v7.1.0` / `v7.0.0` 与 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保持原样，旧试用链接仍指向原内容。
+安装入口与全部内部脚本固定引用 `@v7.10.0`，无需单独添加脚本。**旧固定链接需换成新地址，不会自动更新。** 当前树保留四个模块，试用模块仍缺席；历史 `v7.9.0` / `v7.8.0` / `v7.7.0` / `v7.6.0` / `v7.5.0` / `v7.4.0` / `v7.3.0` / `v7.2.0` / `v7.1.0` / `v7.0.0` 与 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保持原样，旧试用链接仍指向原内容。
 
-升级沿用 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`，两份数据的 `schemaVersion=1` 保持不变；累计 SKU、次数、最近 10 次响应和旧执行记录继续保留。当前配置与实际采集、执行记录分别显示，保存或恢复规则不重写历史版本、模式、目标与时间。
+升级沿用 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`、`g1.sku.mappings.v1`，三个键的 `schemaVersion=1` 保持不变，无自动配置迁移；v7.9 已保存的手动规则、累计 SKU、次数、最近 10 次响应和旧执行记录继续保留。当前配置与实际采集、执行记录分别显示，应用模板、保存或恢复规则不重写历史版本、模式、目标与时间。
 
-[g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) 保留名称 **G1 ACQ**；[g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) 保留名称 **G1 Pro Annual Test** 和仅 `/ai?` 的响应范围，二者使用同一本地映射配置。[g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) 仅更新下载 pin 和报告请求体配置，扫描实现仍为 `pro-annual-test-v2`，保持响应原文，没有模式或响应事件字段；报告保留其真实旧版本、空模式与缺失历史。四个报告 `http-request` 均设置 `requires-body=1,max-size=0`，供本地表单提交使用。
+[g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) 保留名称 **G1 ACQ**；[g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) 保留名称 **G1 Pro Annual Test** 和仅 `/ai?` 的响应范围，二者使用同一本地映射配置。[g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) 更新下载 pin 并保留报告请求体配置，扫描实现仍为 `pro-annual-test-v2`，保持响应原文，没有模式或响应事件字段；报告保留其真实旧版本、空模式与缺失历史。四个报告 `http-request` 均设置 `requires-body=1,max-size=0`，供本地表单提交使用。
+
+## 三套预制映射模板
+
+报告的 **预制映射模板** 位于手动规则前，按以下顺序展示；点击卡片的 **应用模板** 即提交原生 POST，成功后以 **303** 返回报告，并提示模板已保存到本机、下一次匹配响应读取新配置。
+
+| 模板 | 匹配方式 | 完整源 → 目标 |
+|---|---|---|
+| **土区 30TB · 2949.99 里拉记录**（`tr-ultra-30tb`） | 精确 `exact` | `g1.ios.30tb.ai.pro.m` → `g1.ios.30tb.m` |
+| **Ultra 20TB / 30TB · 三个月 75p**（`ultra-75p`） | 两条精确 `exact` | `g1.ios.20tb.m.v2` → `g1.20tb.3months_ip_75p.acq`<br>`g1.ios.30tb.ai.pro.m` → `g1.ai.ultra.3months_ip_75p.acq` |
+| **2TB / Pro · 12个月 90p**（`pro-12months-90p`） | 前缀 `prefix` | `g1.ios.2tb.` → `g1.2tb.ai.12months_ip_90p` |
+
+土区模板使用旧 iOS 30TB 编号。[公开历史记录](https://github.com/kawhaiyoung/rule/blob/b9ce20bc11a77762216fb9f1ab0f04371f943290/G1_ACQ_Egern_README.md#L75)记载 `g1.ios.30tb.m` 曾调起 **2949.99 TRY** 报价；[土耳其 App Store 公开列表](https://apps.apple.com/tr/app/google/id284815942)列出 **Google AI Ultra (30 TB) ₺2.949,99**，公开列表未给出对应 productId 或周期。这里的“2949”仅指公开历史报价，不保证当前账号价格或周期，也不构成实机购买成功、周期或权益已验证的证据；实际金额、周期与权益分别记录 App Store 面板和 Google One 账户显示。
+
+Ultra 模板同时切换 20TB / 30TB，75p 表示减免 75%、实付 25%；2TB / Pro 模板使用现有 2TB 前缀与独立的 12个月 90p 候选，商品周期按 App Store 面板显示。默认三条保持不变，预制目录没有过期 `trial` 或 Ultra 90p 模板，也不重新开启旧试用或 Ultra 一折模式。
+
+- **合并并启用**：按 `(match, from)` 查找已有规则，更新目标并设为启用，保留该条 `id` 和顺序；缺少时追加新规则。其他手动规则、禁用规则与更窄前缀 / 精确覆盖均保留，仍按精确优先、最长前缀决定实际匹配。
+- **重复点击与容量**：重复应用不新增重复规则，但成功保存仍生成新修订。禁用规则也计入 **30 条**上限；已有 30 条时仍可更新同源规则，合并后超过 30 条则整次失败、零写入，不保存部分模板。
+- **冲突与存储失败**：旧页面或保存前配置已变化时返回 409，刷新核对再提交；读取、写入或回读失败返回 503，不显示保存成功，刷新后核对实际配置。损坏或不可读取的配置会禁用模板控件；缺少写入接口时也停用模板操作。
+- **状态与执行分开**：卡片的 **当前规则一致** 只表示全部模板规则在当前配置中匹配且启用，内建默认也可满足该状态；POST 成功提示才表示本次模板已保存。两者均不证明下一响应已改写，更不证明 App Store 购买或权益；重开方案后核对 `test.mappingRevision`、时间和实际 `to`。
+- **与恢复默认的区别**：应用模板保留其他规则并保存为 `custom`；**恢复默认**替换整个规则配置，清除手动差异并回到内建三条 `discount75`。两种操作均保留采集与执行历史，模板不新增持久化字段或 JSON 字段。
 
 ## 默认规则与手动映射
 
@@ -62,7 +82,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 
 图中配置名为示例；个人文件列表、修改时间、文件大小和设备状态栏已移除。
 
-1. 在小火箭模块管理中启用 `v7.9.0` **G1 ACQ SKU 管理**，只开启一个改写入口；旧版用户先关闭旧模块再安装新地址，首页保持 VPN 连接。
+1. 在小火箭模块管理中启用 `v7.10.0` **G1 ACQ SKU 管理**，只开启一个改写入口；旧版用户先关闭旧模块再安装新地址，首页保持 VPN 连接。
 2. 从上述当前配置的 **(i)** 入口进入 **HTTPS 解密**，打开解密开关。已有可用且已受信任的 Shadowrocket 证书时直接沿用；尚未配置证书时，在该页生成并安装证书，再完成下两步。
 3. 首次配置证书时，在 iOS **设置 → 通用 → VPN 与设备管理** 中完成 Shadowrocket 描述文件安装。
 4. 首次配置证书时，在 iOS **设置 → 通用 → 关于本机 → 证书信任设置** 中开启对应 Shadowrocket 根证书的信任。
@@ -72,9 +92,9 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 ## 手机端使用流程
 
 1. 保持主入口开启与小火箭连接，在 **Google App（彩色 G 图标）→ Google One 管理** 浏览实际提供的 2TB / Pro、20TB / 30TB、月付、年付和优惠入口，让模块采集原始 SKU。
-2. 在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)，核对 **本机脚本已接管** 与 **v7.9.0**。从采集列表点源预填入口，或在新增规则表单中输入源；源与目标输入支持已采集 SKU 候选，也可填写完整 ID。
-3. 选择精确或前缀、填写目标、勾选启用，再点该条的**保存**；编辑已有卡片使用同样步骤，取消勾选后保存可禁用。**删除**只移除该条；**恢复默认**还原上表三条，不清历史。
-4. 保存成功后页面返回成功提示；刷新当前配置并核对规则。非法提交保留本次填写并显示错误；旧页面冲突提示后刷新、核对最新规则再提交；保存失败按页面提示处理，不把未成功保存的内容当作生效配置。
+2. 在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)，核对 **本机脚本已接管** 与 **v7.10.0**。在 **预制映射模板** 中点击 **应用模板** 直接合并保存；卡片已显示 **当前规则一致** 时，点击仍会保存并生成新修订。
+3. 手动规则可从采集列表点源预填，或在新增表单填写源与目标；输入支持已采集 SKU 与模板目标候选。选择精确或前缀、勾选启用，再点该条的**保存**；取消勾选后保存可禁用。**删除**只移除该条；**恢复默认**替换全部规则为默认三条，不清历史。
+4. 成功后 303 返回报告并提示已保存，核对当前配置。手动非法提交保留本次填写并显示错误；模板超过 30 条时整批失败；旧页面冲突提示后刷新、核对最新规则再提交；存储失败时不显示成功，刷新核对实际配置。
 5. 重新进入 Google App 方案页，使下一次 `/ai?` 响应使用已保存配置；刷新报告，分别核对当前 `mappingConfig.revision` 与最近执行的 `test.mappingRevision`、`test.version`、`test.mode`、`test.updatedAt`。保存本身不改变旧执行记录。
 6. 核对 App Store 实际商品名称、周期、初次与续费金额，再点 **导出 JSON** 保存本次记录；默认目标核对 2TB / Pro 和 Ultra，手动规则核对其实际源与目标。
 
@@ -88,7 +108,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 
 ## 本地报告与排错
 
-保持主入口开启与小火箭连接，在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)。页面显示 **Google One SKU 管理**、**本机脚本已接管** 与 **v7.9.0**，分别展示当前映射配置、实际采集和最近执行记录；操作区可[导出 JSON](https://one.google.com/g1-sku-report?format=json)。
+保持主入口开启与小火箭连接，在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)。页面显示 **Google One SKU 管理**、**本机脚本已接管** 与 **v7.10.0**，分别展示当前映射配置、实际采集和最近执行记录；操作区可[导出 JSON](https://one.google.com/g1-sku-report?format=json)。
 
 页面由 Shadowrocket 的 `http-request` 脚本在手机本机生成，拦截 `/g1-sku-report`、末尾 `/` 与 query，直接返回 HTML 或 JSON。编辑使用原生 HTML POST 表单，无页面 JavaScript 或外部资源；成功后以 303 返回报告 GET，刷新不重复提交。规则变更只接受报告同源表单，普通 GET、导出 JSON 和 GET 的 `action` 参数均不修改映射。
 
@@ -96,12 +116,12 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 
 | 当前 JSON 字段 | 含义 |
 |---|---|
-| `reportVersion=v7.9.0` | 报告脚本版本，与保存的采集、执行版本独立 |
+| `reportVersion=v7.10.0` | 报告脚本版本，与保存的采集、执行版本独立 |
 | `mappingConfig` | 当前有效配置：`status, revision, updatedAt, mode, customized, rules, target, targetOrigin, error, limit`，`limit=30` |
-| `mappingConfig.rules[]` | `{id, match, from, to, enabled}`；规则 ID 由页面创建，`match` 为 `exact` 或 `prefix` |
+| `mappingConfig.rules[]` | `{id, match, from, to, enabled}`；规则 ID 由本机生成，模板匹配已有规则时保留 ID，`match` 为 `exact` 或 `prefix` |
 | `mappingConfig.status` | `default` 默认、`custom` 手动、`invalid` 配置损坏、`unavailable` 读取失败；后两种暂停改写并显示错误 |
 | `configuredMode` / `configuredTarget` | 从当前 `mappingConfig` 派生；默认 `discount75` / `g1.2tb.ai.12months_ip_90p` |
-| `scan.version` / `scan.mode` | 实际采集版本与模式；本版版本为 `g1-acq-v7.9-mappings`，模式取执行当时配置 |
+| `scan.version` / `scan.mode` | 实际采集版本与模式；本版版本为 `g1-acq-v7.10-mappings`，模式取执行当时配置 |
 | `test.version` / `test.mode` | 最近执行版本与模式，保留到下一次执行记录成功写入 |
 | `test.mappingRevision` / `test.mappingUpdatedAt` / `test.mappingStatus` | 最近执行使用的配置修订、配置保存 UTC 时间和状态；旧记录缺失时不补成当前配置 |
 | `scan.updatedAt` / `test.updatedAt` | 实际采集 / 执行记录的 UTC 时间，与映射保存时间独立 |
@@ -116,9 +136,9 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 | `discount` | Ultra 三个月一折优先（历史模式） |
 | 空字符串、缺失或未知值 | 未记录 |
 
-`scan.mode`、`test.mode` 只读取实际保存值，缺失或未知时 JSON 为空字符串、HTML 显示未记录，不按入口、旧版本名或目标补写。当前 `custom` 或 `discount75` 配置可与旧 `g1-acq-v7.8-75p` / `discount75`、`g1-acq-v7.7-trial` / `trial`、`g1-acq-v7.7-discount` / `discount` 记录并存；历史 `discount` 仍是一折模式。采集与执行独立写入两键，分别查看版本、模式、时间和执行配置修订。
+`scan.mode`、`test.mode` 只读取实际保存值，缺失或未知时 JSON 为空字符串、HTML 显示未记录，不按入口、旧版本名或目标补写。当前 `custom` 或 `discount75` 配置可与旧 `g1-acq-v7.9-mappings` / `custom` 或 `discount75`、`g1-acq-v7.8-75p` / `discount75`、`g1-acq-v7.7-trial` / `trial`、`g1-acq-v7.7-discount` / `discount` 记录并存；历史 `discount` 仍是一折模式。采集与执行独立写入两键，分别查看版本、模式、时间和执行配置修订。
 
-只有 `g1-acq-v7.9-mappings` 标为本版采集记录；旧版本保留真实值与“旧采集记录”。已保存的最近 10 次响应继续显示；更早记录没有 `recentResponses` 时不补造历史，事件也不套用当前模式。版本未知或无记录时显示“尚未保存本版采集响应记录”。
+只有 `g1-acq-v7.10-mappings` 标为本版采集记录；旧版本保留真实值与“旧采集记录”。已保存的最近 10 次响应继续显示；更早记录没有 `recentResponses` 时不补造历史，事件也不套用当前模式。版本未知或无记录时显示“尚未保存本版采集响应记录”。
 
 | 采集字段 | 含义 |
 |---|---|
@@ -133,6 +153,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 
 | 历史执行记录 | 保留的 2TB 目标 | 保留的来源与模式 |
 |---|---|---|
+| `g1-acq-v7.9-mappings` | 保留当时保存的目标，手动配置可与默认不同或为空 | 保留当时来源、`mode=discount75` / `custom`、配置修订、实际 `to` 与 `fallback=false`，不套用新模板 |
 | `g1-acq-v7.8-75p` | `g1.2tb.ai.12months_ip_90p` | `user-specified`；`mode=discount75`、固定 75p 与 `fallback=false` 保留 |
 | `g1-acq-v7.7-trial` | `g1.2tb.ai.12months_ip_90p` | `user-specified`；已保存的 `mode=trial` 保留试用历史含义 |
 | `g1-acq-v7.7-discount` | `g1.2tb.ai.12months_ip_90p` | `user-specified`；已保存的 `mode=discount` 保留一折历史含义 |
@@ -147,7 +168,7 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 
 `status=rewritten` 表示至少一条规则命中，`no-match` 表示没有启用规则命中，`non-text` 表示非文本，`config-error` 表示配置损坏或读取失败并暂停改写；后三种原样返回响应。报告保存最近一次 `/ai?` 执行，后续零命中也会更新它。旧 v1 仅 2TB 行缺少 `to` 时补为 `g1.2tb.ai.annual`，缺少 `annualHitCount` 时从旧行次数计算，旧目标、来源、版本与已保存模式保持原值。
 
-当前日志前缀为 `[g1-acq]`，运行版本为 `g1-acq-v7.9-mappings`，包含执行模式、映射状态与修订；采集摘要保留 `status`、`addedCount`、`candidates`、`omittedCount`、`occurrences`、`saved=yes/no`，改写摘要保留 `hits` 与 `annualHits`，命中行显示 `源 SKU → 实际目标 xN`。`saved=no` / `SKU collection unavailable` 表示本次采集未成功保存或未完成，报告仍可显示旧计数与时间。本版没有备用日志；历史 `fallback=实际完整目标编号` 与更早 `fallback=75p` 按原含义读取。
+当前日志前缀为 `[g1-acq]`，运行版本为 `g1-acq-v7.10-mappings`，包含执行模式、映射状态与修订；采集摘要保留 `status`、`addedCount`、`candidates`、`omittedCount`、`occurrences`、`saved=yes/no`，改写摘要保留 `hits` 与 `annualHits`，命中行显示 `源 SKU → 实际目标 xN`。`saved=no` / `SKU collection unavailable` 表示本次采集未成功保存或未完成，报告仍可显示旧计数与时间。本版没有备用日志；历史 `fallback=实际完整目标编号` 与更早 `fallback=75p` 按原含义读取。
 
 清单仍是旧 SKU 时，按下面顺序比较一次实际活动：
 
@@ -170,13 +191,13 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 | 本地键 | 内容 |
 |---|---|
 | `g1.sku.scan.v1` | 原 schema 1 采集数据，最多 300 个 ID、10 条脱敏响应事件 |
-| `g1.pro.annual.test.v1` | 原 schema 1 最近执行数据，新增执行所用配置修订、时间与状态 |
+| `g1.pro.annual.test.v1` | 原 schema 1 最近执行数据，沿用 v7.9 的执行配置修订、时间与状态字段 |
 | `g1.sku.mappings.v1` | 独立 schema 1 映射记录：`schemaVersion, revision, updatedAt, customized, rules`；最多 30 条 |
 
 时间均使用 UTC。映射键不存在或为空时采用默认规则；显式保存空规则列表表示关闭改写，仍为 `custom`。映射键 JSON / schema / 规则损坏或读取失败时暂停改写，显示配置错误；普通报告 GET 与导出不写入配置。恢复默认保存 `customized=false`，恢复默认模式；采集与执行仍各自独立写入原两键。
 
 - **脚本读取**：响应脚本采集原始正文，不读请求头或请求体；报告 POST 只读取 `Origin`、`Content-Type`、可选 `Sec-Fetch-Site` 与表单正文，不读 Cookie / 认证头。采集事件与导出不保存完整 URL、query、正文或请求头。
-- **本地处理**：采集、改写、报告与映射共用手机 `$persistentStore`，无网络上报；HTML 无 JavaScript 和外部资源。模块与脚本下载使用固定 `@v7.9.0` GitHub / jsDelivr 地址。
+- **本地处理**：采集、改写、报告与映射共用手机 `$persistentStore`，无网络上报；HTML 无 JavaScript 和外部资源。模块与脚本下载使用固定 `@v7.10.0` GitHub / jsDelivr 地址。
 - **改写范围**：只修改符合规则的商品 ID，不改价格字段；原生 StoreKit 返回另按实际收银台记录。
 - **设备配置**：沿用 `[MITM]` 的 `%APPEND% one.google.com` 与 `[Rule]` 的全局 UDP 443 拦截；支持回退的 QUIC 请求转走 TCP，也会影响其它 App 的 HTTP/3、速度或连通性。脚本未申请定位、相册或通知权限，VPN、描述文件与根证书由设备配置管理。
 
@@ -186,16 +207,16 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.9.0/g1-acq-ultra-discount.sgmodule
 |---|---|
 | [g1-acq-ultra-discount.sgmodule](g1-acq-ultra-discount.sgmodule) | G1 ACQ SKU 管理主入口，保留原文件名 |
 | [g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) | 保留名称 G1 ACQ 的兼容入口 |
-| [g1-acq.js](g1-acq.js) | 响应唯一源，运行版本 `g1-acq-v7.9-mappings` |
+| [g1-acq.js](g1-acq.js) | 响应唯一源，运行版本 `g1-acq-v7.10-mappings` |
 | [g1-acq-discount.js](g1-acq-discount.js) | 自动生成、与响应源实现相同的兼容副本 |
 | [g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) | 保留名称与 `/ai?` 范围的兼容入口 |
-| [g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) | 旧版独立扫描模块，仅更新 pin 与报告请求体配置 |
+| [g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) | 旧版独立扫描模块，更新 pin 并保留报告请求体配置 |
 | [g1-sku-scan.js](g1-sku-scan.js) | 历史独立扫描实现 `pro-annual-test-v2`，无模式与响应事件 |
-| [g1-sku-report.js](g1-sku-report.js) | 本地管理页、POST 表单与 JSON 报告唯一源，`reportVersion=v7.9.0` |
+| [g1-sku-report.js](g1-sku-report.js) | 本地管理页、POST 表单与 JSON 报告唯一源，`reportVersion=v7.10.0` |
 | [g1-sku-report-discount.js](g1-sku-report-discount.js) | 自动生成、与报告源实现相同的兼容副本 |
 | [lib/mapping-config.js](lib/mapping-config.js) | 响应与报告共享的映射配置引擎 |
 | [tools/build-variants.cjs](tools/build-variants.cjs) | 嵌入共享配置引擎、生成两个兼容副本并检查同步 |
-| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 安装升级、手动映射、报告字段、历史兼容与记录模板 |
+| [docs/pro-annual-test.md](docs/pro-annual-test.md) | 安装升级、预制模板、手动映射、报告字段、历史兼容与记录模板 |
 
 ## 离线验证
 
@@ -208,7 +229,7 @@ node --test tests/*.test.cjs
 
 [lib/mapping-config.js](lib/mapping-config.js) 是共享配置引擎源；[tools/build-variants.cjs](tools/build-variants.cjs) 更新 [g1-acq.js](g1-acq.js) 和 [g1-sku-report.js](g1-sku-report.js) 中的生成区块，再生成 [g1-acq-discount.js](g1-acq-discount.js) 与 [g1-sku-report-discount.js](g1-sku-report-discount.js)。修改源后运行 `node tools/build-variants.cjs`；`--check` 只检查两个源内区块和两个副本，不写文件。
 
-验证项包括默认三条规则、手动增删改与恢复、禁用 / 空列表、精确优先 / 最长前缀 / 单次替换、30 条上限、表单校验与旧页面冲突、存储读取失败暂停改写、下一响应生效、历史记录独立、300 / 10 上限、JSON 与四个模块配置。结果以实际命令输出为准；离线验证字符串与报告行为，实机结果按文档模板填写。
+验证项包括默认三条规则、三套模板的真实表单 POST / 303、同源合并启用与 ID / 顺序保留、其他规则保留、重复应用、30 条内更新与超限原子失败、旧页面 / 保存前冲突、存储读写与回读失败、当前规则一致与下一响应实际执行的区分；也覆盖手动增删改与恢复、禁用 / 空列表、精确优先 / 最长前缀 / 单次替换、历史记录独立、300 / 10 上限、JSON 与四个模块配置。结果以实际命令输出为准；离线验证字符串与报告行为，实机结果按文档模板填写。
 
 ## 贡献致谢
 

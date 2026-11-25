@@ -3,8 +3,8 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.9.0";
-  var COLLECTOR_VERSION = "g1-acq-v7.9-mappings";
+  var VERSION = "v7.10.0";
+  var COLLECTOR_VERSION = "g1-acq-v7.10-mappings";
   var MODE_NAMES = {
     discount75: "Ultra 三个月 75p（2.5折）",
     custom: "手动映射",
@@ -37,6 +37,36 @@ function createG1MappingConfig(store) {
       { id: "default-2tb", match: "prefix", from: SOURCE_PREFIX, to: "g1.2tb.ai.12months_ip_90p", enabled: true },
       { id: "default-20tb", match: "exact", from: "g1.ios.20tb.m.v2", to: "g1.20tb.3months_ip_75p.acq", enabled: true },
       { id: "default-30tb", match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ai.ultra.3months_ip_75p.acq", enabled: true }
+    ];
+  }
+
+  function presets() {
+    return [
+      {
+        id: "tr-ultra-30tb",
+        title: "土区 30TB · 2949.99 里拉记录",
+        description: "旧 iOS 30TB 编号；公开记录曾调起 2949.99 里拉报价，实际金额与周期查看 App Store。",
+        rules: [
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ios.30tb.m", enabled: true }
+        ]
+      },
+      {
+        id: "ultra-75p",
+        title: "Ultra 20TB / 30TB · 三个月 75p",
+        description: "20TB 与 30TB 一起切换到现有 75p 目标；75p 表示减免 75%，实付 25%。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: "g1.20tb.3months_ip_75p.acq", enabled: true },
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ai.ultra.3months_ip_75p.acq", enabled: true }
+        ]
+      },
+      {
+        id: "pro-12months-90p",
+        title: "2TB / Pro · 12个月 90p",
+        description: "使用现有 2TB 前缀和 12个月优惠目标；商品周期按 App Store 购买面板显示。",
+        rules: [
+          { match: "prefix", from: SOURCE_PREFIX, to: "g1.2tb.ai.12months_ip_90p", enabled: true }
+        ]
+      }
     ];
   }
 
@@ -204,6 +234,52 @@ function createG1MappingConfig(store) {
     return saveResult(200, "", verified);
   }
 
+  function applyPreset(expectedRevision, presetId) {
+    var current = read();
+    if (current.status === "unavailable") return saveResult(503, READ_ERROR, current);
+    if (typeof expectedRevision !== "string" || expectedRevision !== current.revision) {
+      return saveResult(409, REVISION_ERROR, current);
+    }
+    if (current.status === "invalid") return saveResult(400, CONFIG_ERROR, current);
+
+    var selected = null;
+    presets().some(function (preset) {
+      if (preset.id !== presetId) return false;
+      selected = preset;
+      return true;
+    });
+    if (!selected) return saveResult(400, "映射模板不存在，请刷新管理页后重试。", current);
+
+    var rules = current.rules.slice();
+    var ids = Object.create(null);
+    var positions = Object.create(null);
+    rules.forEach(function (rule, index) {
+      ids[rule.id] = true;
+      positions[rule.match + ":" + rule.from] = index;
+    });
+    selected.rules.forEach(function (rule) {
+      var source = rule.match + ":" + rule.from;
+      var position = positions[source];
+      var id;
+      if (typeof position === "number") {
+        id = rules[position].id;
+      } else {
+        var base = newId();
+        id = base;
+        // There are at most rules.length occupied candidates, even if randomness repeats.
+        for (var suffix = 1; suffix <= rules.length && ids[id]; suffix += 1) id = base + "-" + suffix;
+        ids[id] = true;
+        position = rules.length;
+        positions[source] = position;
+      }
+      rules[position] = { id: id, match: rule.match, from: rule.from, to: rule.to, enabled: true };
+    });
+
+    var checked = validateRules(rules);
+    if (!checked.ok) return saveResult(400, checked.error, current);
+    return save(expectedRevision, checked.rules, false);
+  }
+
   function resolve(id, state) {
     if (!validSku(id) || !state || (state.status !== "default" && state.status !== "custom") ||
         !Array.isArray(state.rules)) return null;
@@ -222,11 +298,13 @@ function createG1MappingConfig(store) {
     key: KEY,
     limit: LIMIT,
     defaults: defaults,
+    presets: presets,
     validSku: validSku,
     validateRules: validateRules,
     newId: newId,
     read: read,
     save: save,
+    applyPreset: applyPreset,
     resolve: resolve
   };
 }
@@ -256,6 +334,7 @@ function createG1MappingConfig(store) {
   var storageAvailable = !!(storage && typeof storage.read === "function");
   var engine = createG1MappingConfig(storage);
   var config = engine.read();
+  var presetCatalog = engine.presets();
   var responseStatus = 200;
   var actionError = "";
   var formDraft = null;
@@ -296,13 +375,21 @@ function createG1MappingConfig(store) {
       return;
     }
     var fields = parsed.fields;
-    if (fields.action !== "upsert" && fields.action !== "delete" && fields.action !== "reset") {
+    if (fields.action !== "upsert" && fields.action !== "delete" && fields.action !== "reset" && fields.action !== "preset") {
       problem(400, "表单操作未识别，请重新打开管理页。");
+      return;
+    }
+    if (fields.action === "preset" ? Object.keys(fields).length !== 3 ||
+        !Object.prototype.hasOwnProperty.call(fields, "revision") ||
+        !Object.prototype.hasOwnProperty.call(fields, "preset") :
+        Object.prototype.hasOwnProperty.call(fields, "preset")) {
+      problem(400, "模板表单字段未识别，请重新打开管理页。");
       return;
     }
     var result = changeMapping(fields);
     if (result.ok) {
-      headers.Location = ROOT + "?notice=" + (fields.action === "reset" ? "reset" : fields.action === "delete" ? "deleted" : "saved");
+      headers.Location = ROOT + "?notice=" + (fields.action === "preset" ? "preset" :
+        fields.action === "reset" ? "reset" : fields.action === "delete" ? "deleted" : "saved");
       $done({ response: { status: 303, headers: headers, body: "" } });
       return;
     }
@@ -345,7 +432,7 @@ function createG1MappingConfig(store) {
   }
   function parseForm(value) {
     var out = Object.create(null);
-    var allowed = ["action", "revision", "id", "match", "from", "to", "enabled"];
+    var allowed = ["action", "revision", "id", "match", "from", "to", "enabled", "preset"];
     var parts = value.split("&");
     for (var i = 0; i < parts.length; i++) {
       var at = parts[i].indexOf("=");
@@ -363,6 +450,7 @@ function createG1MappingConfig(store) {
     return { ok: true, fields: out };
   }
   function changeMapping(fields) {
+    if (fields.action === "preset") return engine.applyPreset(fields.revision, fields.preset);
     if (fields.revision !== config.revision) {
       return { ok: false, status: 409, error: "配置已变化，本次未保存；页面已载入最新规则，请重新编辑。" };
     }
@@ -573,6 +661,7 @@ function createG1MappingConfig(store) {
     report.test.mappingRevision === config.revision && report.test.mappingUpdatedAt === config.updatedAt &&
     report.test.mappingStatus === config.status;
   var notices = {
+    preset: "模板已保存到本机；对应规则已启用，下一次匹配的方案页响应会读取新配置。",
     saved: "映射已保存到本机；下一次方案页响应会读取这些规则。",
     deleted: "映射规则已删除；采集和执行历史保持原样。",
     reset: "已恢复默认三条映射；采集和执行历史保持原样。"
@@ -587,12 +676,36 @@ function createG1MappingConfig(store) {
   }
   var candidates = Object.create(null);
   report.scan.skus.forEach(function (row) { if (engine.validSku(row.id)) candidates[row.id] = true; });
-  config.rules.concat(engine.defaults()).forEach(function (rule) {
+  var candidateRules = config.rules.concat(engine.defaults());
+  presetCatalog.forEach(function (preset) { candidateRules = candidateRules.concat(preset.rules); });
+  candidateRules.forEach(function (rule) {
     if (engine.validSku(rule.from)) candidates[rule.from] = true;
     if (engine.validSku(rule.to)) candidates[rule.to] = true;
   });
   function revisionInput() {
     return "<input type=hidden name=revision value=\"" + escape(config.revision) + "\">";
+  }
+  function presetTemplates() {
+    return "<section id=mapping-presets><h2>预制映射模板</h2>" +
+      "<p>点击“应用模板”直接保存：更新并启用相同匹配方式与原始 SKU 的规则，保留其他手动规则和历史记录。</p>" +
+      "<p class=note>保存后重新进入方案页，下一次匹配响应使用新配置。“当前规则一致”只比较本地配置；实际执行结果见下方记录。</p>" +
+      "<div class=preset-grid>" + presetCatalog.map(function (preset) {
+        var matches = validConfig && preset.rules.every(function (target) {
+          return config.rules.some(function (rule) {
+            return rule.match === target.match && rule.from === target.from && rule.to === target.to && rule.enabled;
+          });
+        });
+        var pairs = preset.rules.map(function (rule) {
+          return "<div class=preset-pair><span class=note>" + (rule.match === "exact" ? "完整 SKU" : "SKU 前缀") +
+            "</span><code>" + escape(rule.from) + "</code><span aria-label=替换为>↓</span><code>" + escape(rule.to) + "</code></div>";
+        }).join("");
+        return "<form class=preset method=post action=\"" + ROOT + "\"><fieldset" +
+          (!writable || !validConfig ? " disabled" : "") + "><legend>" + escape(preset.title) + "</legend>" +
+          revisionInput() + "<input type=hidden name=preset value=\"" + escape(preset.id) + "\">" +
+          "<p class=note>" + escape(preset.description) + "</p>" + pairs +
+          (matches ? "<p class=preset-state>当前规则一致</p>" : "") +
+          "<button class=primary type=submit name=action value=preset>应用模板</button></fieldset></form>";
+      }).join("") + "</div></section>";
   }
   function ruleForm(rule, isNew) {
     var draft = formDraft && formDraft.id === rule.id ? formDraft : rule;
@@ -657,7 +770,7 @@ function createG1MappingConfig(store) {
   var html = [
     "<!doctype html><html lang=zh-CN><meta charset=utf-8>",
     "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Google One SKU 管理</title>",
-    "<style>*{box-sizing:border-box}body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge,.success{background:#e0f4e8;color:#176238;padding:8px 12px;border-radius:8px}.badge{display:inline-block}.error{background:#fff0ef;color:#9b2420;padding:12px;border-radius:8px;overflow-wrap:anywhere}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}.actions form{margin:0}button,.actions a{font:inherit;padding:10px 16px;border:0;border-radius:8px;cursor:pointer;text-decoration:none}.actions a,button{background:#e4eaf3;color:#1c2737}.primary{background:#1259be;color:white}.delete{background:#fff0ef;color:#9b2420}fieldset{min-width:0;margin:0;border:1px solid #d7e0ec;border-radius:10px;padding:16px}legend{font-weight:600;padding:0 6px}.rule{margin:20px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.fields label{font-weight:600;min-width:0}input[type=text],select{font:16px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;width:100%;padding:12px;margin-top:6px;border:1px solid #a7b5c8;border-radius:7px;background:white;color:#1c2737}input[type=text]{font-family:ui-monospace,SFMono-Regular,monospace}.check{display:flex;align-items:center;gap:10px;align-self:end;min-height:48px}.check input{width:20px;height:20px}.rule .actions{margin-bottom:0}button:disabled,fieldset:disabled{opacity:.55}button:disabled{cursor:default}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #568ae3;outline-offset:3px}.reset{margin-top:24px}@media(max-width:600px){body{padding:0 10px;margin:16px auto}section{padding:14px}fieldset{padding:12px}.fields{grid-template-columns:1fr}.actions{gap:8px}button{padding:10px 12px}}</style>",
+    "<style>*{box-sizing:border-box}body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge,.success{background:#e0f4e8;color:#176238;padding:8px 12px;border-radius:8px}.badge{display:inline-block}.error{background:#fff0ef;color:#9b2420;padding:12px;border-radius:8px;overflow-wrap:anywhere}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}.actions form{margin:0}button,.actions a{font:inherit;padding:10px 16px;border:0;border-radius:8px;cursor:pointer;text-decoration:none}.actions a,button{background:#e4eaf3;color:#1c2737}.primary{background:#1259be;color:white}.delete{background:#fff0ef;color:#9b2420}fieldset{min-width:0;margin:0;border:1px solid #d7e0ec;border-radius:10px;padding:16px}legend{font-weight:600;padding:0 6px}.rule{margin:20px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.fields label{font-weight:600;min-width:0}input[type=text],select{font:16px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;width:100%;padding:12px;margin-top:6px;border:1px solid #a7b5c8;border-radius:7px;background:white;color:#1c2737}input[type=text]{font-family:ui-monospace,SFMono-Regular,monospace}.check{display:flex;align-items:center;gap:10px;align-self:end;min-height:48px}.check input{width:20px;height:20px}.rule .actions{margin-bottom:0}button:disabled,fieldset:disabled{opacity:.55}button:disabled{cursor:default}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #568ae3;outline-offset:3px}.reset{margin-top:24px}.preset-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.preset{min-width:0;margin:0}.preset fieldset{height:100%;display:flex;flex-direction:column}.preset legend{max-width:100%;font-size:16px}.preset .note{font-size:14px}.preset-pair{padding:10px;margin:12px 0;background:#f5f7fa;border-radius:6px}.preset-pair code{display:block;font-size:13px;line-height:1.6}.preset-state{align-self:flex-start;font-size:13px;padding:5px 8px;margin:0 0 12px;background:#e0f4e8;color:#176238;border-radius:6px}.preset button{width:100%;margin-top:auto}@media(max-width:600px){body{padding:0 10px;margin:16px auto}section{padding:14px}fieldset{padding:12px}.fields,.preset-grid{grid-template-columns:1fr}.actions{gap:8px}button{padding:10px 12px}}</style>",
     "<h1>Google One SKU 管理</h1>",
     "<p class=badge>本机脚本已接管 · " + VERSION + "</p>",
     "<p><strong>当前报告入口：" + modeName(report.configuredMode) + "</strong></p>",
@@ -668,7 +781,7 @@ function createG1MappingConfig(store) {
     noticeText ? "<p class=success role=status>" + escape(noticeText) + "</p>" : "",
     clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
     storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
-    mappingEditor(),
+    presetTemplates(), mappingEditor(),
     "<section><h2>采集运行记录</h2>",
     "<p>实际采集脚本：<code>" + escape(report.scan.version || "暂无记录") + "</code><br>实际采集模式：" + modeName(report.scan.mode) + "<br>" + scanVersionStatus + "</p>",
     "<p>已扫描文本响应：" + report.scan.scannedResponses + "；已记录非文本响应：" + report.scan.nonTextResponses +

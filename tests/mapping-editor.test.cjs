@@ -12,8 +12,8 @@ const ORIGIN = "https://one.google.com";
 const CONFIG_KEY = "g1.sku.mappings.v1";
 const SCAN_KEY = "g1.sku.scan.v1";
 const TEST_KEY = "g1.pro.annual.test.v1";
-const VERSION = "g1-acq-v7.9-mappings";
-const REPORT_VERSION = "v7.9.0";
+const VERSION = "g1-acq-v7.10-mappings";
+const REPORT_VERSION = "v7.10.0";
 const DEFAULT_REVISION = "defaults-75p-v1";
 const TARGET = "g1.2tb.ai.12months_ip_90p";
 const SOURCE = "g1.ios.2tb.fixture_monthly";
@@ -24,6 +24,28 @@ const COM_SOURCE = "com.google.one.fixture_monthly";
 const CUSTOM_TARGET = "com.google.one.fixture_annual";
 const NEXT_TARGET = "g1.fixture.next_offer";
 const FIXED_TIME = "2026-11-23T07:40:06.325Z";
+const TURKEY_TARGET = "g1.ios.30tb.m";
+// Independent contract fixtures: catalog rules deliberately have no persistent IDs.
+const PRESETS = [
+  {
+    id: "tr-ultra-30tb", title: "土区 30TB · 2949.99 里拉记录",
+    description: "旧 iOS 30TB 编号；公开记录曾调起 2949.99 里拉报价，实际金额与周期查看 App Store。",
+    rules: [{ match: "exact", from: THIRTY, to: TURKEY_TARGET, enabled: true }]
+  },
+  {
+    id: "ultra-75p", title: "Ultra 20TB / 30TB · 三个月 75p",
+    description: "20TB 与 30TB 一起切换到现有 75p 目标；75p 表示减免 75%，实付 25%。",
+    rules: [
+      { match: "exact", from: TWENTY, to: "g1.20tb.3months_ip_75p.acq", enabled: true },
+      { match: "exact", from: THIRTY, to: "g1.ai.ultra.3months_ip_75p.acq", enabled: true }
+    ]
+  },
+  {
+    id: "pro-12months-90p", title: "2TB / Pro · 12个月 90p",
+    description: "使用现有 2TB 前缀和 12个月优惠目标；商品周期按 App Store 购买面板显示。",
+    rules: [{ match: "prefix", from: "g1.ios.2tb.", to: TARGET, enabled: true }]
+  }
+];
 const DEFAULT_RULES = [
   { id: "default-2tb", match: "prefix", from: "g1.ios.2tb.", to: TARGET, enabled: true },
   { id: "default-20tb", match: "exact", from: TWENTY, to: "g1.20tb.3months_ip_75p.acq", enabled: true },
@@ -58,6 +80,10 @@ function run(name, options = {}) {
     $done: value => done.push(JSON.parse(JSON.stringify(value))),
     console: { log: value => logs.push(String(value)) }
   };
+  if (options.random) {
+    context.Math = Object.create(Math);
+    context.Math.random = options.random;
+  }
   if (options.storageAvailable !== false) {
     context.$persistentStore = {};
     if (options.readAvailable !== false) {
@@ -164,7 +190,7 @@ function forms(html) {
 
 function formFor(html, action, id) {
   const matches = forms(html).filter(form => form.actions.has(action) &&
-    (id === undefined || (form.fields.id || "") === id));
+    (id === undefined || (action === "preset" ? form.fields.preset : form.fields.id || "") === id));
   assert.equal(matches.length, 1, "expected one " + action + " form for " + (id ?? "its action"));
   assert.equal(matches[0].attrs.method.toLowerCase(), "post");
   assert.equal(new URL(matches[0].attrs.action, ROOT).href, ROOT);
@@ -205,7 +231,7 @@ function change(variant, storage, action, id, changes = {}) {
   assert.deepEqual(page.writes, []);
   const form = formFor(page.payload.response.body, action, id);
   const result = submit(variant, storage, form, action, changes);
-  const html = assertRedirect(variant, result, { upsert: "saved", delete: "deleted", reset: "reset" }[action]);
+  const html = assertRedirect(variant, result, { upsert: "saved", delete: "deleted", reset: "reset", preset: "preset" }[action]);
   return { result, html, config: exported(variant, storage).data.mappingConfig };
 }
 
@@ -261,6 +287,72 @@ function assertNoScript(response) {
   assert.deepEqual(directives.get("form-action"), [ROOT]);
 }
 
+function presetSection(html) {
+  const section = [...html.matchAll(/<section\b([^>]*)>([\s\S]*?)<\/section\s*>/gi)]
+    .find(match => attributes(match[1]).id === "mapping-presets");
+  assert(section, "the report must render a mapping-presets section");
+  return section[2];
+}
+
+function presetCardText(html, id) {
+  const text = decodeHTML(presetSection(html).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ");
+  const preset = PRESETS.find(entry => entry.id === id);
+  const start = text.indexOf(preset.title);
+  assert(start >= 0, "missing preset title " + id);
+  const next = PRESETS.map(entry => text.indexOf(entry.title, start + preset.title.length)).filter(index => index >= 0);
+  return text.slice(start, next.length ? Math.min(...next) : text.length);
+}
+
+function withoutIds(rules) {
+  return rules.map(({ match, from, to, enabled }) => ({ match, from, to, enabled }));
+}
+
+function assertPresetRules(config, preset) {
+  for (const rule of preset.rules) {
+    const matches = config.rules.filter(saved => saved.match === rule.match && saved.from === rule.from);
+    assert.equal(matches.length, 1, preset.id + " must merge each source only once");
+    assert.deepEqual(withoutIds(matches), [rule]);
+    assert.match(matches[0].id, /^[a-z][a-z0-9-]{0,39}$/);
+  }
+}
+
+function engineHarness(options = {}) {
+  const storage = options.storage || new Map();
+  const reads = [];
+  const writes = [];
+  const store = {};
+  if (options.readAvailable !== false) store.read = key => {
+    reads.push(key);
+    return options.read ? options.read(key, storage, { reads, writes }) : storage.get(key) || null;
+  };
+  if (options.writeAvailable !== false) store.write = (value, key) => {
+    writes.push({ key, value });
+    if (options.write) return options.write(value, key, storage, { reads, writes });
+    storage.set(key, value);
+    return true;
+  };
+  const context = vm.createContext({ store: options.storageAvailable === false ? null : store });
+  if (options.random) {
+    context.Math = Object.create(Math);
+    context.Math.random = options.random;
+  }
+  const source = fs.readFileSync(path.join(root, "lib/mapping-config.js"), "utf8");
+  new vm.Script(source + "\nvar engine = createG1MappingConfig(store);", { filename: "lib/mapping-config.js" })
+    .runInContext(context, { timeout: 2000 });
+  return {
+    storage, reads, writes,
+    invoke(method, ...args) {
+      context.method = method;
+      context.args = args;
+      return vm.runInContext("engine[method].apply(engine, args)", context, { timeout: 2000 });
+    }
+  };
+}
+
+function plain(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 for (const variant of VARIANTS) {
   const test = (name, fn) => nodeTest(variant.script + " mapping editor: " + name, fn);
 
@@ -304,8 +396,9 @@ for (const variant of VARIANTS) {
       assert.equal(add.fields.from, "");
       assert.equal(add.fields.to, "");
       assert.equal(formFor(page.payload.response.body, "reset").fields.revision, DEFAULT_REVISION);
-      const permitted = new Set(["action", "revision", "id", "match", "from", "to", "enabled"]);
       for (const form of forms(page.payload.response.body).filter(form => form.attrs.method.toLowerCase() === "post")) {
+        const permitted = new Set(form.actions.has("preset") ? ["action", "revision", "preset"] :
+          ["action", "revision", "id", "match", "from", "to", "enabled"]);
         for (const name of Object.keys(form.fields)) assert(permitted.has(name), "unexpected field " + name);
       }
       assert.deepEqual([...storage], before);
@@ -1060,6 +1153,491 @@ for (const variant of VARIANTS) {
     }
   });
 
+  test("preset cards expose ordered descriptions, exact targets, native fields and datalist candidates", () => {
+    const storage = new Map();
+    const page = htmlPage(variant, storage);
+    const html = page.payload.response.body;
+    const section = presetSection(html);
+    assert(section.includes("预制映射模板"));
+    assert(html.indexOf(section) < html.indexOf(formFor(html, "upsert", "default-2tb").html));
+    assertNoScript(page.payload.response);
+    const presetForms = forms(section).filter(form => form.actions.has("preset"));
+    assert.deepEqual(presetForms.map(form => form.fields.preset), PRESETS.map(preset => preset.id));
+    const lists = [...html.matchAll(/<datalist\b[^>]*>([\s\S]*?)<\/datalist\s*>/gi)];
+    const candidates = new Set(lists.flatMap(list => [...list[1].matchAll(/<option\b([^>]*)>/gi)]
+      .map(option => attributes(option[1]).value)));
+    for (const preset of PRESETS) {
+      const form = formFor(html, "preset", preset.id);
+      assert(form.controls.some(control => control.type === "hidden" && control.name === "preset" && control.value === preset.id));
+      assert.equal(form.fields.revision, DEFAULT_REVISION);
+      const submitted = new URLSearchParams(formBody(form, "preset"));
+      assert.deepEqual([...submitted.keys()].sort(), ["action", "preset", "revision"]);
+      assert.equal(submitted.get("preset"), preset.id);
+      assert(form.html.includes("应用模板"));
+      const card = presetCardText(html, preset.id);
+      assert(card.includes(preset.description));
+      for (const rule of preset.rules) {
+        assert(card.includes(rule.from));
+        assert(card.includes(rule.to));
+        assert(card.includes(rule.match === "exact" ? "完整 SKU" : "前缀"));
+        assert(candidates.has(rule.to), "preset target belongs in the datalist");
+      }
+      assert.equal(card.includes("当前规则一致"), preset.id !== "tr-ultra-30tb");
+    }
+    assert(!section.includes("1month_eft"));
+    assert(!section.includes("3months_ip_90p"));
+    assert(!html.includes("最近一次映射执行已读取当前配置"));
+    assert.deepEqual(page.writes, []);
+    assert.equal(storage.size, 0, "rendering matching builtin defaults is not a save");
+  });
+
+  for (const preset of PRESETS) {
+    test("native preset " + preset.id + " saves one key, redirects read-only and governs the next runtime response", () => {
+      const storage = withConfig([]);
+      run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY]) });
+      const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+      const original = exported(variant, storage).data;
+      const page = htmlPage(variant, storage);
+      const form = formFor(page.payload.response.body, "preset", preset.id);
+      const result = submit(variant, storage, form, "preset");
+      const html = assertRedirect(variant, result, "preset");
+      assert(html.includes("模板已保存到本机"));
+      assert.match(html, /下一次[^<]*响应[^<]*读取/);
+      assert(presetCardText(html, preset.id).includes("当前规则一致"));
+      assert(html.includes("等待下一次方案页响应读取当前配置"));
+      assert(!html.includes("最近一次映射执行已读取当前配置"));
+      const current = exported(variant, storage).data;
+      assert.deepEqual(Object.keys(current).sort(), Object.keys(original).sort());
+      assert.equal(current.configuredMode, "custom");
+      assert.equal(current.mappingConfig.status, "custom");
+      assert.equal(current.mappingConfig.customized, true);
+      assert.equal(current.mappingConfig.rules.length, preset.rules.length);
+      assert.deepEqual(withoutIds(current.mappingConfig.rules), preset.rules);
+      assertPresetRules(current.mappingConfig, preset);
+      const saved = assertStored(storage, current.mappingConfig.rules);
+      assert.notEqual(saved.revision, form.fields.revision);
+      assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+      assert.deepEqual(current.scan, original.scan);
+      assert.deepEqual(current.test, original.test);
+      const values = [SOURCE, OTHER_SOURCE, TWENTY, THIRTY, COM_SOURCE];
+      const expected = values.map(id => {
+        const match = preset.rules.find(rule => rule.match === "exact" ? id === rule.from : id.startsWith(rule.from));
+        return match ? match.to : id;
+      });
+      const body = JSON.stringify({ products: values, price: "2949.99", currency: "TRY", period: "fixture-period", renewAt: FIXED_TIME });
+      const runtime = run(variant.script, { storage, body });
+      assert.equal(runtime.payload.body, JSON.stringify({ products: expected, price: "2949.99", currency: "TRY", period: "fixture-period", renewAt: FIXED_TIME }));
+      assert.deepEqual(runtime.writes.map(write => write.key), [SCAN_KEY, TEST_KEY]);
+      assert.equal(storage.get(CONFIG_KEY), JSON.stringify(saved));
+      const data = exported(variant, storage).data;
+      assert.equal(data.reportVersion, REPORT_VERSION);
+      assert.equal(data.scan.version, VERSION);
+      assert.equal(data.test.version, VERSION);
+      assert.equal(data.test.mappingRevision, saved.revision);
+      assert.equal(data.test.mappingUpdatedAt, saved.updatedAt);
+      assert.equal(data.test.mappingStatus, "custom");
+      assert.equal(data.test.mode, "custom");
+      assert.equal(data.test.hitCount, expected.filter((value, index) => value !== values[index]).length);
+      assert.equal(data.test.annualHitCount, preset.id === "pro-12months-90p" ? 2 : 0);
+      assert(data.test.matchedFrom.every(row => row.fallback === false));
+      assert.deepEqual(data.test.matchedFrom.map(row => [row.id, row.to]).sort(),
+        values.flatMap((id, index) => id === expected[index] ? [] : [[id, expected[index]]]).sort());
+      assert.deepEqual(data.scan.skus.map(row => row.id), [...values].sort());
+      assert(!JSON.stringify(data).includes("fixture-period"));
+      const executed = htmlPage(variant, storage).payload.response.body;
+      assert(executed.includes("最近一次映射执行已读取当前配置"));
+      assert(presetCardText(executed, preset.id).includes("当前规则一致"));
+    });
+  }
+
+  test("Turkey then Ultra 75p and Pro restore current targets without reviving historical offers", () => {
+    const oldTargets = ["g1.2tb.ai.annual", "g1.20tb.1month_eft.acq", "g1.ai.ultra.3months_ip_90p.acq"];
+    const rules = DEFAULT_RULES.map((rule, index) => ({ ...rule, to: oldTargets[index], enabled: false }));
+    const unrelated = exactRule();
+    const storage = withConfig([...rules, unrelated]);
+    for (const preset of PRESETS) {
+      const changed = change(variant, storage, "preset", preset.id);
+      assertPresetRules(changed.config, preset);
+      assert.deepEqual(changed.config.rules.map(rule => rule.id), [...rules, unrelated].map(rule => rule.id));
+      assert.deepEqual(changed.config.rules.at(-1), unrelated);
+      const response = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
+      const expected = preset.id === "tr-ultra-30tb" ? [SOURCE, TWENTY, TURKEY_TARGET, CUSTOM_TARGET] :
+        preset.id === "ultra-75p" ? [SOURCE, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET] :
+        [TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET];
+      assert.deepEqual(JSON.parse(response.payload.body), expected);
+    }
+    const config = exported(variant, storage).data.mappingConfig;
+    assert.deepEqual(config.rules, [...DEFAULT_RULES, unrelated]);
+    assert(config.rules.every(rule => !oldTargets.includes(rule.to) && rule.to !== TURKEY_TARGET));
+    const reset = change(variant, storage, "reset");
+    assert.deepEqual(reset.config.rules, DEFAULT_RULES);
+    assertStored(storage, [], false);
+  });
+
+  test("preset merges preserve IDs and order while enabling matches and retaining narrower overrides", () => {
+    const rules = [
+      exactRule({ id: "unrelated-disabled", enabled: false }),
+      exactRule({ id: "two-exact", from: SOURCE, to: "g1.fixture.exact_override" }),
+      { id: "two-narrow", match: "prefix", from: "g1.ios.2tb.deep.", to: "g1.fixture.narrow_override", enabled: true },
+      { ...DEFAULT_RULES[2], id: "existing-thirty", to: NEXT_TARGET, enabled: false },
+      { ...DEFAULT_RULES[1], id: "existing-twenty", to: NEXT_TARGET, enabled: false },
+      { id: "broad-custom", match: "prefix", from: "g1.ios.", to: "g1.fixture.broad_override", enabled: true },
+      { ...DEFAULT_RULES[0], id: "existing-pro", to: CUSTOM_TARGET, enabled: false }
+    ];
+    const storage = withConfig(rules);
+    const unrelatedIndexes = [0, 1, 2, 5];
+    for (const preset of [PRESETS[2], PRESETS[0], PRESETS[1]]) {
+      const changed = change(variant, storage, "preset", preset.id);
+      assertPresetRules(changed.config, preset);
+      assert.deepEqual(changed.config.rules.map(rule => rule.id), rules.map(rule => rule.id));
+      for (const index of unrelatedIndexes) assert.equal(JSON.stringify(changed.config.rules[index]), JSON.stringify(rules[index]));
+    }
+    const values = [SOURCE, OTHER_SOURCE, "g1.ios.2tb.deep.member", TWENTY, THIRTY, COM_SOURCE, "g1.ios.12tb.fixture"];
+    const response = run(variant.script, { storage, body: JSON.stringify(values) });
+    assert.deepEqual(JSON.parse(response.payload.body), ["g1.fixture.exact_override", TARGET, "g1.fixture.narrow_override",
+      DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, COM_SOURCE, "g1.fixture.broad_override"]);
+    assert(record(storage, TEST_KEY).matchedFrom.every(row => row.fallback === false));
+    assert(presetCardText(htmlPage(variant, storage).payload.response.body, "pro-12months-90p").includes("当前规则一致"));
+  });
+
+  test("presets update existing matches at thirty rules and fill exactly one remaining slot", () => {
+    const fillers = Array.from({ length: 27 }, (_, index) => exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
+    const storage = withConfig([...DEFAULT_RULES.map(rule => ({ ...rule, to: NEXT_TARGET, enabled: false })), ...fillers]);
+    for (const preset of PRESETS) {
+      const changed = change(variant, storage, "preset", preset.id);
+      assert.equal(changed.config.rules.length, 30);
+      assertPresetRules(changed.config, preset);
+      assert.deepEqual(changed.config.rules.slice(3), fillers);
+    }
+    assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, DEFAULT_RULES[2].to);
+    const oneSlot = withConfig([DEFAULT_RULES[1], ...fillers,
+      exactRule({ id: "last-filler", from: "g1.fixture.last_filler", enabled: false })]);
+    const added = change(variant, oneSlot, "preset", "ultra-75p");
+    assert.equal(added.config.rules.length, 30);
+    assertPresetRules(added.config, PRESETS[1]);
+    assert.equal(added.config.rules[0].id, "default-20tb");
+    assert.equal(added.config.rules.at(-1).from, THIRTY);
+    assert.equal(new Set(added.config.rules.map(rule => rule.id)).size, 30);
+  });
+
+  test("over-limit preset merges fail atomically even after an existing match would change", () => {
+    for (const existing of [true, false]) {
+      const fillers = Array.from({ length: 29 }, (_, index) => exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
+      const rules = existing ? [{ ...DEFAULT_RULES[1], to: NEXT_TARGET, enabled: false }, ...fillers] : fillers;
+      const storage = withConfig(rules);
+      storage.set(SCAN_KEY, "fixture-scan-history");
+      storage.set(TEST_KEY, "fixture-test-history");
+      const before = [...storage];
+      const form = formFor(htmlPage(variant, storage).payload.response.body, "preset", "ultra-75p");
+      // Preserve the rendered hidden fields while bypassing optional disabled UI controls.
+      const body = new URLSearchParams({ ...form.fields, action: "preset" }).toString();
+      assertRejected(post(variant, storage, body), 400, before);
+      assert.deepEqual(record(storage, CONFIG_KEY).rules, rules);
+    }
+  });
+
+  test("reapplying a matching preset creates a fresh custom revision without duplicate rules", () => {
+    const storage = new Map();
+    const first = change(variant, storage, "preset", "ultra-75p");
+    assert.deepEqual(first.config.rules, DEFAULT_RULES);
+    assertStored(storage, DEFAULT_RULES);
+    assert.equal(first.config.mode, "custom");
+    run(variant.script, { storage, body: THIRTY });
+    const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+    const second = change(variant, storage, "preset", "ultra-75p");
+    assert.notEqual(second.config.revision, first.config.revision);
+    assert.deepEqual(second.config.rules, first.config.rules);
+    assert.equal(new Set(second.config.rules.map(rule => rule.id)).size, 3);
+    assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+    assert(second.html.includes("等待下一次方案页响应读取当前配置"));
+    assert(!second.html.includes("最近一次映射执行已读取当前配置"));
+    assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, DEFAULT_RULES[2].to);
+    assert.equal(record(storage, TEST_KEY).mappingRevision, second.config.revision);
+  });
+
+  test("old preset forms return 409 after another preset save and expose the newest revision", () => {
+    const storage = new Map();
+    const old = formFor(htmlPage(variant, storage).payload.response.body, "preset", "tr-ultra-30tb");
+    const latest = change(variant, storage, "preset", "ultra-75p");
+    const before = [...storage];
+    const stale = submit(variant, storage, old, "preset");
+    assertRejected(stale, 409, before);
+    assert.equal(formFor(stale.payload.response.body, "preset", "tr-ultra-30tb").fields.revision, latest.config.revision);
+    assert.equal(record(storage, CONFIG_KEY).rules.find(rule => rule.from === THIRTY).to, DEFAULT_RULES[2].to);
+  });
+
+  test("preset merge reads and the final save read each reject intervening revisions", () => {
+    for (const changedRead of [2, 3]) {
+      const storage = withConfig(DEFAULT_RULES);
+      const form = formFor(htmlPage(variant, storage).payload.response.body, "preset", "tr-ultra-30tb");
+      const concurrent = storedConfig([...DEFAULT_RULES, exactRule()], { revision: "b".repeat(48) });
+      let configReads = 0;
+      const result = submit(variant, storage, form, "preset", {}, {
+        read(key, current) {
+          if (key === CONFIG_KEY && ++configReads === changedRead) current.set(key, JSON.stringify(concurrent));
+          return current.get(key) || null;
+        }
+      });
+      assertRejected(result, 409, [[CONFIG_KEY, JSON.stringify(concurrent)]]);
+      assert(configReads >= changedRead);
+      assert.equal(formFor(result.payload.response.body, "preset", "tr-ultra-30tb").fields.revision, concurrent.revision);
+      assert.deepEqual(record(storage, CONFIG_KEY).rules, concurrent.rules);
+    }
+  });
+
+  test("preset read, write and readback faults return 503 without a success redirect or history mutation", () => {
+    const faults = [
+      { storageAvailable: false },
+      { readAvailable: false },
+      { read() { throw new Error("private-preset-read"); } },
+      ...[2, 3].map(at => ({ read(key, storage, calls) {
+        if (key === CONFIG_KEY && calls.reads.filter(value => value === CONFIG_KEY).length === at) throw new Error("private-preset-read");
+        return storage.get(key) || null;
+      } })),
+      { writeAvailable: false },
+      { write() { return false; } },
+      { write() { throw new Error("private-preset-write"); } },
+      { write() { return true; } },
+      { read(key, storage, calls) {
+        if (key === CONFIG_KEY && calls.writes.length) throw new Error("private-preset-readback");
+        return storage.get(key) || null;
+      } },
+      { read(key, storage, calls) {
+        if (key === CONFIG_KEY && calls.writes.length) return JSON.stringify(storedConfig(DEFAULT_RULES, { revision: "b".repeat(48) }));
+        return storage.get(key) || null;
+      } },
+      { read(key, storage, calls) {
+        if (key === CONFIG_KEY && calls.writes.length) {
+          const changed = record(storage, CONFIG_KEY);
+          changed.rules.find(rule => rule.from === THIRTY).to = NEXT_TARGET;
+          return JSON.stringify(changed);
+        }
+        return storage.get(key) || null;
+      } }
+    ];
+    for (const fault of faults) {
+      const storage = withConfig(DEFAULT_RULES);
+      storage.set(SCAN_KEY, "fixture-scan-history");
+      storage.set(TEST_KEY, "fixture-test-history");
+      const previous = storage.get(CONFIG_KEY);
+      const form = formFor(htmlPage(variant, storage).payload.response.body, "preset", "tr-ultra-30tb");
+      const result = submit(variant, storage, form, "preset", {}, fault);
+      assert.equal(result.payload.response.status, 503);
+      assert.equal(header(result.payload.response, "Location"), undefined);
+      assert(result.writes.length <= 1);
+      assert(result.writes.every(write => write.key === CONFIG_KEY));
+      assert.equal(storage.get(SCAN_KEY), "fixture-scan-history");
+      assert.equal(storage.get(TEST_KEY), "fixture-test-history");
+      assert(!result.payload.response.body.includes("模板已保存到本机"));
+      assert(!result.payload.response.body.includes("private-preset-"));
+      if (!result.writes.length || !fault.read) assert.equal(storage.get(CONFIG_KEY), previous);
+    }
+  });
+
+  test("presets leave invalid settings untouched until the real reset form repairs them", () => {
+    const storage = new Map([[CONFIG_KEY, "fixture-invalid-config"]]);
+    const page = htmlPage(variant, storage);
+    for (const preset of PRESETS) {
+      const form = formFor(page.payload.response.body, "preset", preset.id);
+      assert.equal(form.fields.revision, "invalid");
+      assert.equal(form.disabled, true);
+      const body = new URLSearchParams({ ...form.fields, action: "preset" }).toString();
+      assertRejected(post(variant, storage, body), 400, [[CONFIG_KEY, "fixture-invalid-config"]]);
+    }
+    const reset = formFor(page.payload.response.body, "reset");
+    assertRedirect(variant, submit(variant, storage, reset, "reset"), "reset");
+    assertStored(storage, [], false);
+    const applied = change(variant, storage, "preset", "tr-ultra-30tb");
+    assertPresetRules(applied.config, PRESETS[0]);
+    assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, TURKEY_TARGET);
+  });
+
+  test("preset forms reject missing, duplicate, additional, malformed and non-allowlisted fields", () => {
+    const storage = new Map();
+    const form = formFor(htmlPage(variant, storage).payload.response.body, "preset", "tr-ultra-30tb");
+    const body = formBody(form, "preset");
+    const changes = [
+      { action: undefined }, { revision: undefined }, { preset: undefined },
+      { action: "Preset" }, { preset: "" }, { preset: "constructor" }, { preset: "__proto__" },
+      { preset: "toString" }, { preset: "hasOwnProperty" }, { preset: "unknown" },
+      { preset: "tr-ultra-30tb " }, { preset: " tr-ultra-30tb" }, { preset: "TR-ULTRA-30TB" },
+      { preset: "tr-ultra-30tb\n" }, { preset: "tr-ultra-30tb\u0000" },
+      { preset: '<img src=x onerror="preset-marker">' }
+    ];
+    for (const fields of changes) assertRejected(post(variant, storage, formBody(form, "preset", fields)), 400, []);
+    for (const suffix of [
+      "&preset=ultra-75p", "&pres%65t=tr-ultra-30tb", "&action=preset", "&revision=" + DEFAULT_REVISION,
+      "&id=default-30tb", "&match=exact", "&from=" + THIRTY, "&to=" + NEXT_TARGET, "&enabled=1",
+      "&rules=%5B%5D", "&unknown=1", "&__proto__=tr-ultra-30tb", "&constructor=ultra-75p", "&clear=1"
+    ]) assertRejected(post(variant, storage, body + suffix), 400, []);
+    for (const value of ["%", "%GG", "%E0%A4%A", "%C0%AF", "%ED%A0%80"]) {
+      assertRejected(post(variant, storage, body.replace("preset=tr-ultra-30tb", "preset=" + value)), 400, []);
+    }
+    assertRejected(post(variant, storage, body + "&preset=" + "a".repeat(20000)), 413, []);
+    const valid = submit(variant, storage, form, "preset");
+    assertRedirect(variant, valid, "preset");
+    assert.equal(record(storage, CONFIG_KEY).rules.find(rule => rule.from === THIRTY).to, TURKEY_TARGET);
+  });
+
+  test("existing upsert, delete and reset actions reject an added preset field", () => {
+    const storage = withConfig(DEFAULT_RULES);
+    const html = htmlPage(variant, storage).payload.response.body;
+    const before = [...storage];
+    for (const action of ["upsert", "delete", "reset"]) {
+      const form = formFor(html, action, action === "reset" ? undefined : "default-20tb");
+      assertRejected(submit(variant, storage, form, action, { preset: "tr-ultra-30tb" }), 400, before);
+    }
+  });
+
+  test("preset GET queries, report links and the real JSON export form remain read-only", () => {
+    const storage = new Map();
+    run(variant.script, { storage, body: THIRTY });
+    const page = htmlPage(variant, storage);
+    const baseline = exported(variant, storage).data;
+    const form = formFor(page.payload.response.body, "preset", "tr-ultra-30tb");
+    const body = formBody(form, "preset");
+    const before = [...storage];
+    for (const suffix of ["", "&format=json", "&clear=1", "&format=json&clear=1"]) {
+      const result = run(variant.report, { storage, url: ROOT + "?" + body + suffix, method: "GET", headers: FORM_HEADERS, requestBody: body });
+      assertRejected(result, 405, before);
+    }
+    for (const suffix of ["?preset=tr-ultra-30tb", "?preset=tr-ultra-30tb&revision=" + DEFAULT_REVISION, "?notice=preset", "?format=json&preset=tr-ultra-30tb"]) {
+      const result = run(variant.report, { storage, url: ROOT + suffix });
+      assert.equal(result.payload.response.status, 200);
+      assert.deepEqual(result.writes, []);
+      assert.deepEqual([...storage], before);
+    }
+    for (const link of page.payload.response.body.matchAll(/<a\b([^>]*)>/gi)) {
+      const href = attributes(link[1]).href;
+      if (!href || !new URL(href, ROOT).href.startsWith(ROOT)) continue;
+      const result = htmlPage(variant, storage, { url: new URL(href, ROOT).href });
+      assert.deepEqual(result.writes, []);
+      assert.deepEqual([...storage], before);
+    }
+    const exportForm = forms(page.payload.response.body).find(form => form.attrs.method.toLowerCase() === "get" &&
+      form.buttons.some(button => button.name === "format" && button.value === "json"));
+    assert(exportForm);
+    const url = new URL(exportForm.attrs.action, ROOT);
+    for (const [key, value] of Object.entries(exportForm.fields)) url.searchParams.set(key, value);
+    url.searchParams.set("format", "json");
+    const exportedData = exported(variant, storage, { url: url.href }).data;
+    assert.deepEqual(exportedData, baseline);
+    assert.deepEqual([...storage], before);
+    assert.equal(storage.has(CONFIG_KEY), false);
+  });
+
+  test("preset POST retains exact Origin, fetch-site, content-type and CSP enforcement", () => {
+    const storage = new Map();
+    const page = htmlPage(variant, storage);
+    const form = formFor(page.payload.response.body, "preset", "tr-ultra-30tb");
+    assertNoScript(page.payload.response);
+    for (const origin of [undefined, "", "null", "https://example.test", ORIGIN + ".evil", "http://one.google.com", ORIGIN + "/", ORIGIN + ":443"]) {
+      const headers = { "Content-Type": FORM_HEADERS["Content-Type"] };
+      if (origin !== undefined) headers.Origin = origin;
+      assertRejected(submit(variant, storage, form, "preset", {}, { headers }), 403, []);
+    }
+    for (const site of ["cross-site", "same-site", "none", "", "null"]) {
+      assertRejected(submit(variant, storage, form, "preset", {}, { headers: { ...FORM_HEADERS, "Sec-Fetch-Site": site } }), 403, []);
+    }
+    for (const contentType of [undefined, "application/json", "text/plain", "application/x-www-form-urlencodedx"]) {
+      const headers = { Origin: ORIGIN };
+      if (contentType !== undefined) headers["Content-Type"] = contentType;
+      assertRejected(submit(variant, storage, form, "preset", {}, { headers }), 415, []);
+    }
+    const headers = { origin: ORIGIN, "content-type": "application/x-www-form-urlencoded; charset=UTF-8", "sec-fetch-site": "same-origin" };
+    const touched = [];
+    for (const key of ["Cookie", "Authorization"]) Object.defineProperty(headers, key, {
+      enumerable: true, get() { touched.push(key); throw new Error("private-preset-header"); }
+    });
+    const result = submit(variant, storage, form, "preset", {}, { headers });
+    const html = assertRedirect(variant, result, "preset");
+    assertNoScript(result.payload.response);
+    assert(html.includes("当前规则一致"));
+    assert.deepEqual(touched, []);
+  });
+
+  test("preset consistency labels require every enabled pair and stay distinct from runtime evidence", () => {
+    for (const rules of [
+      [DEFAULT_RULES[1]],
+      [DEFAULT_RULES[1], { ...DEFAULT_RULES[2], enabled: false }],
+      [DEFAULT_RULES[1], { ...DEFAULT_RULES[2], to: TURKEY_TARGET }],
+      [DEFAULT_RULES[1], DEFAULT_RULES[2]]
+    ]) {
+      const storage = withConfig(rules);
+      const html = htmlPage(variant, storage).payload.response.body;
+      const matches = rules.length === 2 && rules[1].enabled && rules[1].to === DEFAULT_RULES[2].to;
+      assert.equal(presetCardText(html, "ultra-75p").includes("当前规则一致"), matches);
+      assert(!html.includes("最近一次映射执行已读取当前配置"));
+    }
+    const storage = withConfig([exactRule({ from: SOURCE }), { ...DEFAULT_RULES[0], enabled: false }]);
+    const changed = change(variant, storage, "preset", "pro-12months-90p");
+    assert(presetCardText(changed.html, "pro-12months-90p").includes("当前规则一致"));
+    assert(!changed.html.includes("最近一次映射执行已读取当前配置"));
+    assert.equal(run(variant.script, { storage, body: SOURCE }).payload.body, CUSTOM_TARGET);
+    const html = htmlPage(variant, storage).payload.response.body;
+    assert(presetCardText(html, "pro-12months-90p").includes("当前规则一致"));
+    assert(html.includes("最近一次映射执行已读取当前配置"));
+    assert.equal(record(storage, TEST_KEY).matchedFrom[0].to, CUSTOM_TARGET, "a consistent prefix still respects an exact override");
+  });
+
+  test("preset controls are disabled for invalid or unavailable settings and absent write APIs", () => {
+    const scenarios = [
+      { storage: new Map([[CONFIG_KEY, "fixture-invalid-config"]]) },
+      { storage: new Map(), options: { storageAvailable: false } },
+      { storage: new Map(), options: { readAvailable: false } },
+      { storage: new Map(), options: { read() { throw new Error("private-disabled-read"); } } },
+      { storage: new Map(), options: { writeAvailable: false } }
+    ];
+    for (const scenario of scenarios) {
+      const before = [...scenario.storage];
+      const page = htmlPage(variant, scenario.storage, scenario.options);
+      for (const preset of PRESETS) {
+        const form = formFor(page.payload.response.body, "preset", preset.id);
+        assert(form.disabled || form.buttons.length === 0, "each preset submit control must be disabled");
+      }
+      assert.deepEqual(page.writes, []);
+      assert.deepEqual([...scenario.storage], before);
+      assertNoScript(page.payload.response);
+    }
+  });
+
+  test("applying every preset preserves historical modes, fallback targets, 300 IDs and ten arrivals", () => {
+    for (const mode of ["trial", "discount", "discount75"]) {
+      const version = mode === "discount75" ? "g1-acq-v7.9-mappings" : "g1-acq-v7.7-" + mode;
+      const scan = {
+        schemaVersion: 1, version, mode, updatedAt: FIXED_TIME, scannedResponses: 40, matchedResponses: 35,
+        nonTextResponses: 5, truncated: true, limit: 300,
+        skus: Array.from({ length: 300 }, (_, index) => ({ id: "g1.fixture.history_" + index, count: index + 1, lastSeen: FIXED_TIME })),
+        recentResponses: Array.from({ length: 10 }, () => ({ at: FIXED_TIME, path: "/plans", bodyType: "text",
+          status: "known-skus", candidateCount: 2, addedCount: 0, omittedCount: 0 }))
+      };
+      const test = {
+        schemaVersion: 1, version, mode, updatedAt: FIXED_TIME, target: TARGET, targetOrigin: "user-specified",
+        status: "rewritten", hitCount: 3, annualHitCount: 1, mappingRevision: "b".repeat(48), mappingUpdatedAt: FIXED_TIME,
+        mappingStatus: "default", matchedFrom: [
+          { id: SOURCE, to: TARGET, count: 1, fallback: false },
+          { id: TWENTY, to: "g1.20tb.1month_eft.acq", count: 1, fallback: false },
+          { id: THIRTY, to: "g1.ai.ultra.3months_ip_90p.acq", count: 1, fallback: true }
+        ]
+      };
+      const storage = new Map([[SCAN_KEY, JSON.stringify(scan)], [TEST_KEY, JSON.stringify(test)]]);
+      const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+      const baseline = exported(variant, storage).data;
+      for (const preset of PRESETS) {
+        change(variant, storage, "preset", preset.id);
+        const data = exported(variant, storage).data;
+        assert.deepEqual(data.scan, baseline.scan);
+        assert.deepEqual(data.test, baseline.test);
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+        assert.equal(data.scan.skus.length, 300);
+        assert.equal(data.scan.recentResponses.length, 10);
+        assert.deepEqual([...storage.keys()].sort(), [CONFIG_KEY, SCAN_KEY, TEST_KEY].sort());
+        const html = htmlPage(variant, storage).payload.response.body;
+        assert(html.includes("g1.ai.ultra.3months_ip_90p.acq</code></td><td>90p</td>"));
+      }
+    }
+  });
+
   test("historical 2TB target-origin inference uses fixed defaults rather than the edited prefix", () => {
     for (const previous of [
       { version: "g1-acq-v7.8-75p", target: TARGET, expected: TARGET, origin: "user-specified" },
@@ -1081,6 +1659,123 @@ for (const variant of VARIANTS) {
     }
   });
 }
+
+nodeTest("preset catalog has the exact public shape and returns isolated objects, arrays and rules", () => {
+  const harness = engineHarness();
+  const first = harness.invoke("presets");
+  const second = harness.invoke("presets");
+  assert.deepEqual(plain(first), PRESETS);
+  assert.deepEqual(plain(second), PRESETS);
+  assert.notEqual(first, second);
+  for (let index = 0; index < first.length; index++) {
+    assert.notEqual(first[index], second[index]);
+    assert.notEqual(first[index].rules, second[index].rules);
+    assert.deepEqual(Object.keys(first[index]).sort(), ["description", "id", "rules", "title"]);
+    for (let ruleIndex = 0; ruleIndex < first[index].rules.length; ruleIndex++) {
+      assert.notEqual(first[index].rules[ruleIndex], second[index].rules[ruleIndex]);
+      assert.deepEqual(Object.keys(first[index].rules[ruleIndex]).sort(), ["enabled", "from", "match", "to"]);
+    }
+  }
+  first[0].id = "changed-id";
+  first[0].title = "changed-title";
+  first[0].description = "changed-description";
+  first[0].rules[0].to = NEXT_TARGET;
+  first[1].rules.pop();
+  first[2].rules = [];
+  first.push({ id: "injected-preset", rules: [] });
+  assert.deepEqual(plain(harness.invoke("presets")), PRESETS);
+  assert.deepEqual(plain(second), PRESETS);
+  assert.deepEqual(harness.reads, []);
+  assert.deepEqual(harness.writes, []);
+});
+
+nodeTest("applyPreset accepts only builtin IDs and ignores caller-supplied rule payloads", () => {
+  const harness = engineHarness({ storage: withConfig([]) });
+  for (const id of [undefined, null, "", "unknown", "constructor", "__proto__", "toString", "hasOwnProperty",
+    "tr-ultra-30tb ", "tr-ultra-30tb\n", 0, true, ["tr-ultra-30tb"], { id: "tr-ultra-30tb" },
+    { toString() { return "tr-ultra-30tb"; } }]) {
+    const result = plain(harness.invoke("applyPreset", "a".repeat(48), id));
+    assert.deepEqual(Object.keys(result).sort(), ["config", "error", "ok", "status"]);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+    assert.equal(typeof result.error, "string");
+    assert(result.error.length > 0);
+    assert.deepEqual(result.config.rules, []);
+    assert.deepEqual(harness.writes, []);
+  }
+  const catalog = harness.invoke("presets");
+  catalog[0].rules[0].to = NEXT_TARGET;
+  const result = plain(harness.invoke("applyPreset", "a".repeat(48), "tr-ultra-30tb", [exactRule({ from: THIRTY, to: NEXT_TARGET })]));
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 200);
+  assert.equal(result.error, "");
+  assert.deepEqual(withoutIds(result.config.rules), PRESETS[0].rules);
+  assert.deepEqual(harness.writes.map(write => write.key), [CONFIG_KEY]);
+  assertStored(harness.storage, result.config.rules);
+});
+
+nodeTest("preset insertion stays unique and bounded when every random value repeats", () => {
+  const base = "rule-" + "0".repeat(16);
+  const rules = Array.from({ length: 28 }, (_, index) => exactRule({
+    id: index === 0 ? base : base + "-" + index, from: "g1.fixture.collision_" + index, enabled: index % 2 === 0
+  }));
+  const harness = engineHarness({ storage: withConfig(rules), random: () => 0 });
+  // The VM timeout makes an unbounded collision retry fail this node promptly.
+  const applied = plain(harness.invoke("applyPreset", "a".repeat(48), "ultra-75p"));
+  assert.equal(applied.status, 200);
+  assert.equal(applied.config.rules.length, 30);
+  assert.deepEqual(applied.config.rules.slice(0, 28), rules);
+  assert.deepEqual(withoutIds(applied.config.rules.slice(28)), PRESETS[1].rules);
+  assert.equal(new Set(applied.config.rules.map(rule => rule.id)).size, 30);
+  assert(applied.config.rules.every(rule => /^[a-z][a-z0-9-]{0,39}$/.test(rule.id)));
+  assert.equal(harness.invoke("validateRules", applied.config.rules).ok, true);
+  const repeated = plain(harness.invoke("applyPreset", applied.config.revision, "ultra-75p"));
+  assert.equal(repeated.status, 200);
+  assert.notEqual(repeated.config.revision, applied.config.revision);
+  assert.deepEqual(repeated.config.rules, applied.config.rules);
+  assert.deepEqual(harness.writes.map(write => write.key), [CONFIG_KEY, CONFIG_KEY]);
+  assertStored(harness.storage, repeated.config.rules);
+});
+
+nodeTest("applyPreset exposes stale, invalid, unavailable, over-limit and final-save race failures without writes", () => {
+  const scenarios = [
+    { options: { storage: withConfig(DEFAULT_RULES) }, revision: "b".repeat(48), status: 409 },
+    { options: { storage: new Map([[CONFIG_KEY, "fixture-invalid-config"]]) }, revision: "invalid", status: 400 },
+    { options: { storageAvailable: false }, revision: DEFAULT_REVISION, status: 503 },
+    { options: { readAvailable: false }, revision: DEFAULT_REVISION, status: 503 },
+    { options: { read() { throw new Error("fixture-read-failure"); } }, revision: DEFAULT_REVISION, status: 503 },
+    { options: { storage: withConfig(Array.from({ length: 30 }, (_, index) => exactRule({ id: "limit-" + index, from: "g1.fixture.limit_" + index }))) },
+      revision: "a".repeat(48), status: 400 }
+  ];
+  for (const scenario of scenarios) {
+    const harness = engineHarness(scenario.options);
+    const before = [...harness.storage];
+    const result = plain(harness.invoke("applyPreset", scenario.revision, "tr-ultra-30tb"));
+    assert.deepEqual(Object.keys(result).sort(), ["config", "error", "ok", "status"]);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, scenario.status);
+    assert.equal(typeof result.error, "string");
+    assert(result.error.length > 0);
+    assert.deepEqual(harness.writes, []);
+    assert.deepEqual([...harness.storage], before);
+  }
+  const concurrent = storedConfig([...DEFAULT_RULES, exactRule()], { revision: "b".repeat(48) });
+  const harness = engineHarness({
+    storage: withConfig(DEFAULT_RULES),
+    read(key, storage, calls) {
+      if (calls.reads.length === 2) storage.set(key, JSON.stringify(concurrent));
+      return storage.get(key) || null;
+    }
+  });
+  const raced = plain(harness.invoke("applyPreset", "a".repeat(48), "tr-ultra-30tb"));
+  assert.equal(raced.status, 409);
+  assert.equal(raced.ok, false);
+  assert.deepEqual(raced.config.rules, concurrent.rules);
+  assert.equal(raced.config.revision, concurrent.revision);
+  assert.deepEqual(harness.reads, [CONFIG_KEY, CONFIG_KEY]);
+  assert.deepEqual(harness.writes, []);
+  assert.equal(harness.storage.get(CONFIG_KEY), JSON.stringify(concurrent));
+});
 
 nodeTest("mapping config generated blocks and aliases share the real engine and --check is read-only", () => {
   const enginePath = path.join(root, "lib/mapping-config.js");
