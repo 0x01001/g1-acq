@@ -11,6 +11,7 @@ function createG1MappingConfig(store) {
   var LIMIT = 30;
   var DEFAULT_REVISION = "defaults-75p-v1";
   var SOURCE_PREFIX = "g1.ios.2tb.";
+  var PRO_TARGET = "com.google.gemini.2tb.ai.m.3month_ip_99p";
   var READ_ERROR = "本地映射存储暂未就绪，本次保持响应原样。";
   var CONFIG_ERROR = "映射配置格式异常，当前暂停改写；请恢复默认后重新编辑。";
   var WRITE_ERROR = "保存结果未通过回读核对，请刷新页面查看当前配置。";
@@ -30,10 +31,11 @@ function createG1MappingConfig(store) {
     return [
       {
         id: "pro-1yuan",
-        title: "1 元开 Pro（前三月约 1 元/月）",
-        description: "使用 Pro 自身的 2TB 前缀；应用后重新进入 Pro 方案页，实际金额与周期查看 App Store。",
+        title: "1 元 Pro · 月付源核对",
+        description: "匹配旧 Pro 月付编号与已采集的 AI 月付候选；新候选的套餐归属待实机核对，金额与周期查看购买面板。",
         rules: [
-          { match: "prefix", from: SOURCE_PREFIX, to: "com.google.gemini.2tb.ai.m.3month_ip_99p", enabled: true }
+          { match: "exact", from: "g1.ios.2tb.ai.m", to: PRO_TARGET, enabled: true },
+          { match: "exact", from: "g1.ios.ai.2tb.m.ip_3mo_75p.acq", to: PRO_TARGET, enabled: true }
         ]
       },
       {
@@ -70,6 +72,12 @@ function createG1MappingConfig(store) {
         ]
       }
     ];
+  }
+
+  function isLegacyProRule(rule) {
+    return !!rule && rule.to === PRO_TARGET &&
+      ((rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2") ||
+       (rule.match === "prefix" && rule.from === SOURCE_PREFIX));
   }
 
   function validSku(value) {
@@ -258,9 +266,8 @@ function createG1MappingConfig(store) {
     rules.forEach(function (rule, index) {
       ids[rule.id] = true;
       positions[rule.match + ":" + rule.from] = index;
-      // Retire only the old Pro template's 20TB route, in the same atomic save.
-      if (presetId === "pro-1yuan" && rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2" &&
-          rule.to === selected.rules[0].to && rule.enabled) {
+      // Retire only the old Pro template routes, in the same atomic save.
+      if (presetId === "pro-1yuan" && rule.enabled && isLegacyProRule(rule)) {
         rules[index] = { id: rule.id, match: rule.match, from: rule.from, to: rule.to, enabled: false };
       }
     });
@@ -306,6 +313,7 @@ function createG1MappingConfig(store) {
     limit: LIMIT,
     defaults: defaults,
     presets: presets,
+    isLegacyProRule: isLegacyProRule,
     validSku: validSku,
     validateRules: validateRules,
     newId: newId,
@@ -318,7 +326,7 @@ function createG1MappingConfig(store) {
 // END GENERATED MAPPING CONFIG
 
 (function () {
-  var VERSION = "g1-acq-v7.12-mappings";
+  var VERSION = "g1-acq-v7.13-mappings";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";

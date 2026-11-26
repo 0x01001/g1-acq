@@ -3,8 +3,8 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.12.0";
-  var COLLECTOR_VERSION = "g1-acq-v7.12-mappings";
+  var VERSION = "v7.13.0";
+  var COLLECTOR_VERSION = "g1-acq-v7.13-mappings";
   var MODE_NAMES = {
     discount75: "Ultra 三个月 75p（2.5折）",
     custom: "手动映射",
@@ -25,6 +25,7 @@ function createG1MappingConfig(store) {
   var LIMIT = 30;
   var DEFAULT_REVISION = "defaults-75p-v1";
   var SOURCE_PREFIX = "g1.ios.2tb.";
+  var PRO_TARGET = "com.google.gemini.2tb.ai.m.3month_ip_99p";
   var READ_ERROR = "本地映射存储暂未就绪，本次保持响应原样。";
   var CONFIG_ERROR = "映射配置格式异常，当前暂停改写；请恢复默认后重新编辑。";
   var WRITE_ERROR = "保存结果未通过回读核对，请刷新页面查看当前配置。";
@@ -44,10 +45,11 @@ function createG1MappingConfig(store) {
     return [
       {
         id: "pro-1yuan",
-        title: "1 元开 Pro（前三月约 1 元/月）",
-        description: "使用 Pro 自身的 2TB 前缀；应用后重新进入 Pro 方案页，实际金额与周期查看 App Store。",
+        title: "1 元 Pro · 月付源核对",
+        description: "匹配旧 Pro 月付编号与已采集的 AI 月付候选；新候选的套餐归属待实机核对，金额与周期查看购买面板。",
         rules: [
-          { match: "prefix", from: SOURCE_PREFIX, to: "com.google.gemini.2tb.ai.m.3month_ip_99p", enabled: true }
+          { match: "exact", from: "g1.ios.2tb.ai.m", to: PRO_TARGET, enabled: true },
+          { match: "exact", from: "g1.ios.ai.2tb.m.ip_3mo_75p.acq", to: PRO_TARGET, enabled: true }
         ]
       },
       {
@@ -84,6 +86,12 @@ function createG1MappingConfig(store) {
         ]
       }
     ];
+  }
+
+  function isLegacyProRule(rule) {
+    return !!rule && rule.to === PRO_TARGET &&
+      ((rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2") ||
+       (rule.match === "prefix" && rule.from === SOURCE_PREFIX));
   }
 
   function validSku(value) {
@@ -272,9 +280,8 @@ function createG1MappingConfig(store) {
     rules.forEach(function (rule, index) {
       ids[rule.id] = true;
       positions[rule.match + ":" + rule.from] = index;
-      // Retire only the old Pro template's 20TB route, in the same atomic save.
-      if (presetId === "pro-1yuan" && rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2" &&
-          rule.to === selected.rules[0].to && rule.enabled) {
+      // Retire only the old Pro template routes, in the same atomic save.
+      if (presetId === "pro-1yuan" && rule.enabled && isLegacyProRule(rule)) {
         rules[index] = { id: rule.id, match: rule.match, from: rule.from, to: rule.to, enabled: false };
       }
     });
@@ -320,6 +327,7 @@ function createG1MappingConfig(store) {
     limit: LIMIT,
     defaults: defaults,
     presets: presets,
+    isLegacyProRule: isLegacyProRule,
     validSku: validSku,
     validateRules: validateRules,
     newId: newId,
@@ -580,6 +588,10 @@ function createG1MappingConfig(store) {
     recordedTarget = LEGACY_TARGET;
   }
   var matchedFrom = rows(testRaw.matchedFrom, false, recordedTarget);
+  // Template counts require an explicitly recorded target, not a legacy inference.
+  var executedRows = rows(testRaw.matchedFrom, false, "").filter(function (row) {
+    return engine.validSku(row.id) && engine.validSku(row.to);
+  });
   if (!recordedTarget && !Object.prototype.hasOwnProperty.call(testRaw, "mappingRevision")) {
     matchedFrom.some(function (row) {
       if (row.id.indexOf("g1.ios.2tb.") === 0 && row.to) {
@@ -706,12 +718,35 @@ function createG1MappingConfig(store) {
   function revisionInput() {
     return "<input type=hidden name=revision value=\"" + escape(config.revision) + "\">";
   }
+  function presetExecution(preset, matches) {
+    if (!validConfig) return "<p class=note>当前配置未就绪，暂不统计模板命中。</p>";
+    if (!matches) return "<p class=note>当前规则尚未应用此模板。</p>";
+    if (!applied) return "<p class=note>等待当前配置的新响应记录。</p>";
+    var counts = preset.rules.map(function () { return 0; });
+    var total = 0;
+    executedRows.forEach(function (row) {
+      var matched = false;
+      preset.rules.forEach(function (rule, index) {
+        var sourceMatches = rule.match === "exact" ? row.id === rule.from :
+          row.id.length > rule.from.length && row.id.indexOf(rule.from) === 0;
+        if (sourceMatches && row.to === rule.to) {
+          counts[index] += row.count;
+          matched = true;
+        }
+      });
+      if (matched) total += row.count;
+    });
+    return "<div class=preset-execution><p class=note>最近响应：本模板命中 " + total + " 次。</p>" +
+      preset.rules.map(function (rule, index) {
+        return "<p class=note><code>" + escape(rule.from) + "</code>：" + counts[index] + " 次</p>";
+      }).join("") + "</div>";
+  }
   function presetTemplates() {
     return "<section id=mapping-presets><h2>预制映射模板</h2>" +
       "<p>安装升级后，点击“应用模板”才会保存对应规则；升级本身保留现有配置。相同匹配方式与原始 SKU 的规则会更新并启用，其他手动规则和历史记录保留。</p>" +
-      "<p class=note>1 元 Pro 与土区 20TB 可以同时使用。1 元 Pro 和 12个月 Pro 模板切换同一 Pro 前缀；土区 20TB 与 Ultra 75p 切换 20TB 入口。</p>" +
-      "<p class=note>应用 1 元 Pro 会停用旧版遗留的“20TB → 1 元 Pro”规则，20TB 的其他目标保持原值；随后从 Pro 自身方案页进入。</p>" +
-      "<p class=note>保存后重新进入方案页，下一次匹配响应使用新配置。“当前规则一致”只比较本地配置；核对下方最近执行的脚本版本、配置修订和实际目标。</p>" +
+      "<p class=note>1 元 Pro 只设置卡片中的两条月付精确源，与土区 20TB / 30TB 可以同时使用；新的 AI 月付编号是已采集候选，套餐归属仍待实机核对。</p>" +
+      "<p class=note>应用 1 元 Pro 会停用旧版将整个 2TB 前缀或 20TB 入口指向同一 Gemini 目标的规则，其他目标保留。两条月付精确规则优先于旧 2TB 前缀；切回前缀行为时，先在映射管理停用这两条月付规则。</p>" +
+      "<p class=note>保存后重新进入月付方案页，再刷新查看各模板及每个源的命中次数。“当前规则一致”只比较配置；命中只证明 HTTP 响应字符串替换，未记录购买调用或 StoreKit 结果。</p>" +
       "<div class=preset-grid>" + presetCatalog.map(function (preset) {
         var matches = validConfig && preset.rules.every(function (target) {
           return config.rules.some(function (rule) {
@@ -720,8 +755,7 @@ function createG1MappingConfig(store) {
         });
         if (matches && preset.id === "pro-1yuan") {
           matches = !config.rules.some(function (rule) {
-            return rule.enabled && rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2" &&
-              rule.to === preset.rules[0].to;
+            return rule.enabled && engine.isLegacyProRule(rule);
           });
         }
         var pairs = preset.rules.map(function (rule) {
@@ -732,7 +766,7 @@ function createG1MappingConfig(store) {
           (!writable || !validConfig ? " disabled" : "") + "><legend>" + escape(preset.title) + "</legend>" +
           revisionInput() + "<input type=hidden name=preset value=\"" + escape(preset.id) + "\">" +
           "<p class=note>" + escape(preset.description) + "</p>" + pairs +
-          (matches ? "<p class=preset-state>当前规则一致</p>" : "") +
+          (matches ? "<p class=preset-state>当前规则一致</p>" : "") + presetExecution(preset, matches) +
           "<button class=primary type=submit name=action value=preset>应用模板</button></fieldset></form>";
       }).join("") + "</div></section>";
   }

@@ -12,8 +12,8 @@ const ORIGIN = "https://one.google.com";
 const CONFIG_KEY = "g1.sku.mappings.v1";
 const SCAN_KEY = "g1.sku.scan.v1";
 const TEST_KEY = "g1.pro.annual.test.v1";
-const VERSION = "g1-acq-v7.12-mappings";
-const REPORT_VERSION = "v7.12.0";
+const VERSION = "g1-acq-v7.13-mappings";
+const REPORT_VERSION = "v7.13.0";
 const DEFAULT_REVISION = "defaults-75p-v1";
 const TARGET = "g1.2tb.ai.12months_ip_90p";
 const SOURCE = "g1.ios.2tb.fixture_monthly";
@@ -28,12 +28,24 @@ const TURKEY_TARGET = "g1.ios.30tb.m";
 const TURKEY_TWENTY_TARGET = "g1.ios.20tb.m";
 const TR_PRO_TARGET = "com.google.gemini.2tb.ai.m.3month_ip_99p";
 const GEMINI_NAMESPACE = "com.google.gemini.";
+const PRO_MONTHLY = "g1.ios.2tb.ai.m";
+const AI_MONTHLY = "g1.ios.ai.2tb.m.ip_3mo_75p.acq";
+// Public SKU literals only; this fixture makes no StoreKit or product-identity claim.
+const NON_PRO_MONTHLY_SOURCES = [
+  "g1.ios.ai.2tb.a.ip_1yr_10p.acq", "g1.ios.2tb.ai.a",
+  "g1.ios.helium.m", "g1.ios.helium.a",
+  "g1.ios.helium.m.3month_ip_75p.acq", "g1.ios.helium.a.ip_1yr_10p.acq",
+  "g1.ios.2tb.m.3month_ip_75p", "g1.ios.2tb.a.12month_ip_15p"
+];
 // Independent contract fixtures: catalog rules deliberately have no persistent IDs.
 const PRESETS = [
   {
-    id: "pro-1yuan", title: "1 元开 Pro（前三月约 1 元/月）",
-    description: "使用 Pro 自身的 2TB 前缀；应用后重新进入 Pro 方案页，实际金额与周期查看 App Store。",
-    rules: [{ match: "prefix", from: "g1.ios.2tb.", to: TR_PRO_TARGET, enabled: true }]
+    id: "pro-1yuan", title: "1 元 Pro · 月付源核对",
+    description: "匹配旧 Pro 月付编号与已采集的 AI 月付候选；新候选的套餐归属待实机核对，金额与周期查看购买面板。",
+    rules: [
+      { match: "exact", from: PRO_MONTHLY, to: TR_PRO_TARGET, enabled: true },
+      { match: "exact", from: AI_MONTHLY, to: TR_PRO_TARGET, enabled: true }
+    ]
   },
   {
     id: "tr-ultra-20tb", title: "土区 20TB · 1989.99 里拉记录",
@@ -277,9 +289,8 @@ function exactRule(overrides = {}) {
   return { id: "fixture-rule", match: "exact", from: COM_SOURCE, to: CUSTOM_TARGET, enabled: true, ...overrides };
 }
 
-function legacyProStorage(rules) {
+function legacyProStorage(rules, version = "g1-acq-v7.11-mappings") {
   const storage = withConfig(rules);
-  const version = "g1-acq-v7.11-mappings";
   storage.set(SCAN_KEY, JSON.stringify({
     schemaVersion: 1, version, mode: "custom", updatedAt: FIXED_TIME,
     scannedResponses: 4, matchedResponses: 4, nonTextResponses: 0, limit: 300, truncated: false,
@@ -356,6 +367,36 @@ function presetCardText(html, id) {
   assert(start >= 0, "missing preset title " + id);
   const next = PRESETS.map(entry => text.indexOf(entry.title, start + preset.title.length)).filter(index => index >= 0);
   return text.slice(start, next.length ? Math.min(...next) : text.length);
+}
+
+function assertPresetExecution(html, id, expected, sourceCounts = []) {
+  const card = presetCardText(html, id);
+  if (typeof expected === "string") {
+    assert(card.includes(expected), id + " must show " + expected);
+    assert(!card.includes("最近响应：本模板命中"), id + " must not show a stale total");
+    assert(!/：\s*\d+\s*次/.test(card), id + " must not show stale source counts");
+    return;
+  }
+  assert(card.includes("最近响应：本模板命中 " + expected + " 次。"), id + " total=" + expected);
+  assert(!card.includes("当前规则尚未应用此模板。"));
+  assert(!card.includes("等待当前配置的新响应记录。"));
+  assert.equal(sourceCounts.length, presetById(id).rules.length, "verify every source, including zero counts");
+  for (const [from, count] of sourceCounts) {
+    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(card, new RegExp(escaped + "\\s*：\\s*" + count + "\\s*次(?:\\s|。|$)"), id + " source=" + from);
+  }
+}
+
+function executionRecord(config, matchedFrom, overrides = {}) {
+  return {
+    schemaVersion: 1, version: VERSION, mode: config.mode, updatedAt: FIXED_TIME,
+    status: matchedFrom.length ? "rewritten" : "no-match",
+    target: config.target, targetOrigin: config.targetOrigin,
+    mappingRevision: config.revision, mappingUpdatedAt: config.updatedAt, mappingStatus: config.status,
+    hitCount: matchedFrom.reduce((sum, row) => sum + row.count, 0),
+    annualHitCount: matchedFrom.filter(row => row.id.startsWith("g1.ios.2tb.")).reduce((sum, row) => sum + row.count, 0),
+    matchedFrom, ...overrides
+  };
 }
 
 function withoutIds(rules) {
@@ -1385,7 +1426,7 @@ for (const variant of VARIANTS) {
       assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
       assert.deepEqual(current.scan, original.scan);
       assert.deepEqual(current.test, original.test);
-      const values = [SOURCE, OTHER_SOURCE, TWENTY, THIRTY, COM_SOURCE];
+      const values = [PRO_MONTHLY, AI_MONTHLY, SOURCE, OTHER_SOURCE, TWENTY, THIRTY, COM_SOURCE];
       const expected = values.map(id => {
         const match = preset.rules.find(rule => rule.match === "exact" ? id === rule.from : id.startsWith(rule.from));
         return match ? match.to : id;
@@ -1404,7 +1445,7 @@ for (const variant of VARIANTS) {
       assert.equal(data.test.mappingStatus, "custom");
       assert.equal(data.test.mode, "custom");
       assert.equal(data.test.hitCount, expected.filter((value, index) => value !== values[index]).length);
-      assert.equal(data.test.annualHitCount, ["pro-1yuan", "pro-12months-90p"].includes(preset.id) ? 2 : 0);
+      assert.equal(data.test.annualHitCount, preset.id === "pro-1yuan" ? 1 : preset.id === "pro-12months-90p" ? 3 : 0);
       assert(data.test.matchedFrom.every(row => row.fallback === false));
       assert.deepEqual(data.test.matchedFrom.map(row => [row.id, row.to]).sort(),
         values.flatMap((id, index) => id === expected[index] ? [] : [[id, expected[index]]]).sort());
@@ -1417,58 +1458,65 @@ for (const variant of VARIANTS) {
   }
 
   test("Pro and TR20 coexist in either order while Ultra75p and Pro12 switch only their own sources", () => {
-    const twenty75 = DEFAULT_RULES.find(rule => rule.id === "default-20tb").to;
-    const thirty75 = DEFAULT_RULES.find(rule => rule.id === "default-30tb").to;
+    const twenty75 = DEFAULT_RULES[1].to;
+    const thirty75 = DEFAULT_RULES[2].to;
     const sequences = [
       [
-        { id: "pro-1yuan", targets: [TR_PRO_TARGET, twenty75, thirty75] },
-        { id: "tr-ultra-20tb", targets: [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, thirty75] },
-        { id: "ultra-75p", targets: [TR_PRO_TARGET, twenty75, thirty75] },
-        { id: "pro-1yuan", targets: [TR_PRO_TARGET, twenty75, thirty75] }
+        { id: "pro-1yuan", pro: true, twenty: twenty75 },
+        { id: "tr-ultra-20tb", pro: true, twenty: TURKEY_TWENTY_TARGET },
+        { id: "ultra-75p", pro: true, twenty: twenty75 },
+        { id: "pro-1yuan", pro: true, twenty: twenty75 }
       ],
       [
-        { id: "tr-ultra-20tb", targets: [TARGET, TURKEY_TWENTY_TARGET, thirty75] },
-        { id: "pro-1yuan", targets: [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, thirty75] },
-        { id: "pro-12months-90p", targets: [TARGET, TURKEY_TWENTY_TARGET, thirty75] }
+        { id: "tr-ultra-20tb", pro: false, twenty: TURKEY_TWENTY_TARGET },
+        { id: "pro-1yuan", pro: true, twenty: TURKEY_TWENTY_TARGET },
+        { id: "pro-12months-90p", pro: true, twenty: TURKEY_TWENTY_TARGET }
       ]
     ];
     for (const sequence of sequences) {
       const storage = new Map();
       run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY]) });
       let previousRevision = DEFAULT_REVISION;
+      let previousRules = DEFAULT_RULES;
       for (const step of sequence) {
         const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
         const changed = change(variant, storage, "preset", step.id);
         assertPresetRules(changed.config, presetById(step.id));
-        assert.deepEqual(changed.config.rules, DEFAULT_RULES.map((rule, index) => ({ ...rule, to: step.targets[index] })));
+        assert.deepEqual(changed.config.rules.slice(0, 3), [DEFAULT_RULES[0], { ...DEFAULT_RULES[1], to: step.twenty }, DEFAULT_RULES[2]]);
+        assert.deepEqual(changed.config.rules.slice(0, previousRules.length).map(rule => rule.id), previousRules.map(rule => rule.id));
+        assert.equal(changed.config.rules.length, step.pro ? 5 : 3);
+        if (step.pro) assertPresetRules(changed.config, presetById("pro-1yuan"));
         assert.notEqual(changed.config.revision, previousRevision);
         assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
         assert(changed.html.includes("等待下一次方案页响应读取当前配置"));
         assert(!changed.html.includes("最近一次映射执行已读取当前配置"));
         const badges = {
-          "pro-1yuan": step.targets[0] === TR_PRO_TARGET,
-          "tr-ultra-20tb": step.targets[1] === TURKEY_TWENTY_TARGET,
+          "pro-1yuan": step.pro,
+          "tr-ultra-20tb": step.twenty === TURKEY_TWENTY_TARGET,
           "tr-ultra-30tb": false,
-          "ultra-75p": step.targets[1] === twenty75 && step.targets[2] === thirty75,
-          "pro-12months-90p": step.targets[0] === TARGET
+          "ultra-75p": step.twenty === twenty75,
+          "pro-12months-90p": true
         };
         for (const [id, matches] of Object.entries(badges)) {
           assert.equal(presetCardText(changed.html, id).includes("当前规则一致"), matches, step.id + " -> " + id);
         }
-        const runtime = run(variant.script, { storage, body: JSON.stringify([SOURCE, OTHER_SOURCE, TWENTY, THIRTY]) });
-        assert.deepEqual(JSON.parse(runtime.payload.body), [step.targets[0], step.targets[0], step.targets[1], step.targets[2]]);
+        const values = [PRO_MONTHLY, AI_MONTHLY, SOURCE, OTHER_SOURCE, TWENTY, THIRTY];
+        const expected = [step.pro ? TR_PRO_TARGET : TARGET, step.pro ? TR_PRO_TARGET : AI_MONTHLY, TARGET, TARGET, step.twenty, thirty75];
+        const runtime = run(variant.script, { storage, body: JSON.stringify(values) });
+        assert.deepEqual(JSON.parse(runtime.payload.body), expected, "Pro12 retains the exact monthly overrides");
         const data = exported(variant, storage).data;
-        assert.equal(data.configuredTarget, step.targets[0]);
-        assert.equal(data.test.target, step.targets[0]);
+        assert.equal(data.configuredTarget, TARGET);
+        assert.equal(data.test.target, TARGET);
         assert.equal(data.test.targetOrigin, "user-configured");
         assert.equal(data.test.version, VERSION);
         assert.equal(data.test.mappingRevision, changed.config.revision);
-        assert.equal(data.test.hitCount, 4);
-        assert.equal(data.test.annualHitCount, 2);
+        assert.equal(data.test.hitCount, step.pro ? 6 : 5);
+        assert.equal(data.test.annualHitCount, 3);
         assert.deepEqual(data.test.matchedFrom.map(row => [row.id, row.to]).sort(),
-          [[SOURCE, step.targets[0]], [OTHER_SOURCE, step.targets[0]], [TWENTY, step.targets[1]], [THIRTY, step.targets[2]]].sort());
+          values.flatMap((id, index) => id === expected[index] ? [] : [[id, expected[index]]]).sort());
         assert(htmlPage(variant, storage).payload.response.body.includes("最近一次映射执行已读取当前配置"));
         previousRevision = changed.config.revision;
+        previousRules = changed.config.rules;
       }
     }
   });
@@ -1498,28 +1546,28 @@ for (const variant of VARIANTS) {
     assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, rules);
   });
 
-  test("Pro atomically disables only its legacy 20TB rule, preserves IDs and history, and TR20 reuses that row", () => {
-    for (const enabled of [true, false]) {
-      for (const prefixState of ["absent", "disabled", "already-gemini"]) {
-        const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET, enabled });
-        const prefix = { ...DEFAULT_RULES[0], id: "existing-pro-prefix",
-          to: prefixState === "already-gemini" ? TR_PRO_TARGET : TARGET, enabled: prefixState === "already-gemini" };
-        const rules = [exactRule({ id: "other-rule", enabled: false }), legacy, DEFAULT_RULES[2],
-          ...(prefixState === "absent" ? [] : [prefix])];
+  test("Pro atomically disables both legacy routes, preserves IDs and history, and TR20 reuses its row", () => {
+    for (const twentyEnabled of [true, false]) for (const prefixEnabled of [true, false]) {
+      for (const existingSources of [[], [PRO_MONTHLY], [AI_MONTHLY], [AI_MONTHLY, PRO_MONTHLY]]) {
+        const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET, enabled: twentyEnabled });
+        const prefix = { ...DEFAULT_RULES[0], id: "existing-pro-prefix", to: TR_PRO_TARGET, enabled: prefixEnabled };
+        const existing = existingSources.map((from, index) => exactRule({ id: "existing-monthly-" + index, from, to: NEXT_TARGET, enabled: false }));
+        const rules = [exactRule({ id: "other-rule", enabled: false }), legacy, DEFAULT_RULES[2], prefix, ...existing];
         const storage = legacyProStorage(rules);
         const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
         const historical = exported(variant, storage).data;
         const initialHTML = htmlPage(variant, storage).payload.response.body;
-        assert.equal(presetCardText(initialHTML, "pro-1yuan").includes("当前规则一致"), prefixState === "already-gemini" && !enabled);
+        assert(!presetCardText(initialHTML, "pro-1yuan").includes("当前规则一致"));
         const changed = change(variant, storage, "preset", "pro-1yuan");
         assertPresetRules(changed.config, presetById("pro-1yuan"));
         assert.deepEqual(changed.config.rules.slice(0, rules.length).map(rule => rule.id), rules.map(rule => rule.id));
-        assert.deepEqual(changed.config.rules.find(rule => rule.id === legacy.id), { ...legacy, enabled: false });
-        assert.deepEqual(changed.config.rules[0], rules[0]);
-        assert.deepEqual(changed.config.rules[2], rules[2]);
-        assert.equal(changed.config.rules.length, rules.length + (prefixState === "absent" ? 1 : 0));
-        assert.equal(changed.config.rules.at(-1).from, "g1.ios.2tb.");
-        if (prefixState !== "absent") assert.equal(changed.config.rules.at(-1).id, prefix.id);
+        assert.deepEqual(changed.config.rules.slice(0, 4), [rules[0], { ...legacy, enabled: false }, rules[2], { ...prefix, enabled: false }]);
+        assert.equal(changed.config.rules.length, 6);
+        for (const prior of existing) {
+          assert.deepEqual(changed.config.rules.find(rule => rule.id === prior.id), { ...prior, to: TR_PRO_TARGET, enabled: true });
+        }
+        assert.deepEqual(withoutIds(changed.config.rules.slice(rules.length)),
+          presetById("pro-1yuan").rules.filter(rule => !existingSources.includes(rule.from)));
         assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
         const afterSave = exported(variant, storage).data;
         assert.deepEqual(afterSave.scan, historical.scan);
@@ -1531,14 +1579,14 @@ for (const variant of VARIANTS) {
         assert.notEqual(repeated.config.revision, changed.config.revision);
         assert.deepEqual(repeated.config.rules, changed.config.rules);
         assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
-        const runtime = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
-        assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, TWENTY, DEFAULT_RULES[2].to, COM_SOURCE]);
+        const runtime = run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
+        assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, TR_PRO_TARGET, SOURCE, TWENTY, DEFAULT_RULES[2].to, COM_SOURCE]);
         const executed = exported(variant, storage).data;
         assert.equal(executed.test.version, VERSION);
         assert.equal(executed.test.mappingRevision, repeated.config.revision);
-        assert.equal(executed.test.target, TR_PRO_TARGET);
+        assert.equal(executed.test.target, "");
         assert.deepEqual(executed.test.matchedFrom.map(row => [row.id, row.to]).sort(),
-          [[SOURCE, TR_PRO_TARGET], [THIRTY, DEFAULT_RULES[2].to]].sort());
+          [[PRO_MONTHLY, TR_PRO_TARGET], [AI_MONTHLY, TR_PRO_TARGET], [THIRTY, DEFAULT_RULES[2].to]].sort());
         const currentHTML = htmlPage(variant, storage).payload.response.body;
         assert(currentHTML.includes("最近一次映射执行已读取当前配置"));
         assert(!currentHTML.includes("最近一次执行记录来自 <code>g1-acq-v7.11-mappings</code>"));
@@ -1551,46 +1599,57 @@ for (const variant of VARIANTS) {
         assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], beforeTR20);
         assert(presetCardText(turkey.html, "pro-1yuan").includes("当前规则一致"));
         assert(presetCardText(turkey.html, "tr-ultra-20tb").includes("当前规则一致"));
-        const combined = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY]) });
-        assert.deepEqual(JSON.parse(combined.payload.body), [TR_PRO_TARGET, TURKEY_TWENTY_TARGET]);
+        const combined = run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, TWENTY]) });
+        assert.deepEqual(JSON.parse(combined.payload.body), [TR_PRO_TARGET, TR_PRO_TARGET, TURKEY_TWENTY_TARGET]);
         assert.equal(exported(variant, storage).data.test.mappingRevision, turkey.config.revision);
       }
     }
   });
 
-  test("Pro preserves other 20TB targets and Gemini rules with a different source or match type", () => {
+  test("Pro preserves other 20TB and prefix targets and Gemini rules with a different source or match type", () => {
     for (const twentyTarget of [TURKEY_TWENTY_TARGET, DEFAULT_RULES[1].to, NEXT_TARGET]) {
-      const rules = [
-        exactRule({ id: "twenty-manual", from: TWENTY, to: twentyTarget }),
-        exactRule({ id: "twenty-prefix", match: "prefix", from: "g1.ios.20tb.", to: TR_PRO_TARGET }),
-        exactRule({ id: "twenty-extra", from: TWENTY + ".extra", to: TR_PRO_TARGET }),
-        exactRule({ id: "thirty-gemini", from: THIRTY, to: TR_PRO_TARGET }),
-        exactRule(),
-        { ...DEFAULT_RULES[0], enabled: false }
-      ];
-      const storage = legacyProStorage(rules);
-      const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
-      const changed = change(variant, storage, "preset", "pro-1yuan");
-      assert.deepEqual(changed.config.rules.slice(0, -1), rules.slice(0, -1));
-      assert.deepEqual(changed.config.rules.map(rule => rule.id), rules.map(rule => rule.id));
-      assertPresetRules(changed.config, presetById("pro-1yuan"));
-      assert(presetCardText(changed.html, "pro-1yuan").includes("当前规则一致"));
-      assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
-      const values = [SOURCE, TWENTY, "g1.ios.20tb.other", TWENTY + ".extra", THIRTY, COM_SOURCE];
-      const runtime = run(variant.script, { storage, body: JSON.stringify(values) });
-      assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, twentyTarget, TR_PRO_TARGET, TR_PRO_TARGET, TR_PRO_TARGET, CUSTOM_TARGET]);
-      assert.equal(exported(variant, storage).data.test.matchedFrom.find(row => row.id === TWENTY).to, twentyTarget);
+      for (const prefixEnabled of [true, false]) {
+        const rules = [
+          exactRule({ id: "twenty-manual", from: TWENTY, to: twentyTarget }),
+          exactRule({ id: "twenty-prefix", match: "prefix", from: "g1.ios.20tb.", to: TR_PRO_TARGET }),
+          exactRule({ id: "twenty-extra", from: TWENTY + ".extra", to: TR_PRO_TARGET }),
+          exactRule({ id: "thirty-gemini", from: THIRTY, to: TR_PRO_TARGET }),
+          exactRule(),
+          { ...DEFAULT_RULES[0], to: CUSTOM_TARGET, enabled: prefixEnabled },
+          exactRule({ id: "ordinary-exact", from: "g1.ios.2tb.m.3month_ip_75p", to: TR_PRO_TARGET }),
+          exactRule({ id: "other-prefix", match: "prefix", from: "g1.ios.2tb.ai.", to: TR_PRO_TARGET })
+        ];
+        const storage = legacyProStorage(rules);
+        const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+        const changed = change(variant, storage, "preset", "pro-1yuan");
+        assert.deepEqual(changed.config.rules.slice(0, rules.length), rules);
+        assert.equal(changed.config.rules.length, rules.length + 2);
+        assertPresetRules(changed.config, presetById("pro-1yuan"));
+        assert(presetCardText(changed.html, "pro-1yuan").includes("当前规则一致"));
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+        const values = [PRO_MONTHLY, AI_MONTHLY, SOURCE, TWENTY, "g1.ios.20tb.other", TWENTY + ".extra", THIRTY, COM_SOURCE];
+        const runtime = run(variant.script, { storage, body: JSON.stringify(values) });
+        assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, TR_PRO_TARGET, prefixEnabled ? CUSTOM_TARGET : SOURCE,
+          twentyTarget, TR_PRO_TARGET, TR_PRO_TARGET, TR_PRO_TARGET, CUSTOM_TARGET]);
+        assert.equal(exported(variant, storage).data.test.matchedFrom.find(row => row.id === TWENTY).to, twentyTarget);
+      }
     }
   });
 
   test("legacy Pro migration fills slot thirty, updates at capacity, and fails without partial disable when full", () => {
     for (const scenario of [
-      { count: 29, prefix: false, status: 303 },
-      { count: 30, prefix: true, status: 303 },
-      { count: 30, prefix: false, status: 400 }
+      { count: 28, monthly: [], status: 303 },
+      { count: 29, monthly: [PRO_MONTHLY], status: 303 },
+      { count: 29, monthly: [AI_MONTHLY], status: 303 },
+      { count: 30, monthly: [AI_MONTHLY, PRO_MONTHLY], status: 303 },
+      { count: 29, monthly: [], status: 400 },
+      { count: 30, monthly: [PRO_MONTHLY], status: 400 },
+      { count: 30, monthly: [], status: 400 }
     ]) {
       const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET });
-      const base = [legacy, ...(scenario.prefix ? [{ ...DEFAULT_RULES[0], enabled: false }] : [])];
+      const prefix = { ...DEFAULT_RULES[0], to: TR_PRO_TARGET };
+      const base = [legacy, prefix, ...scenario.monthly.map((from, index) =>
+        exactRule({ id: "monthly-existing-" + index, from, to: NEXT_TARGET, enabled: false }))];
       const fillers = Array.from({ length: scenario.count - base.length }, (_, index) =>
         exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
       const rules = [...base, ...fillers];
@@ -1602,12 +1661,14 @@ for (const variant of VARIANTS) {
         assertRejected(result, 400, before);
         assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, rules);
         assert.equal(formFor(result.payload.response.body, "upsert", legacy.id).fields.enabled, "1");
+        assert.equal(formFor(result.payload.response.body, "upsert", prefix.id).fields.enabled, "1");
       } else {
         const html = assertRedirect(variant, result, "preset");
         const config = exported(variant, storage).data.mappingConfig;
         assert.equal(config.rules.length, 30);
         assert.deepEqual(config.rules.slice(0, rules.length).map(rule => rule.id), rules.map(rule => rule.id));
         assert.deepEqual(config.rules[0], { ...legacy, enabled: false });
+        assert.deepEqual(config.rules[1], { ...prefix, enabled: false });
         assert.deepEqual(config.rules.slice(base.length, scenario.count), fillers);
         assertPresetRules(config, presetById("pro-1yuan"));
         assert(presetCardText(html, "pro-1yuan").includes("当前规则一致"));
@@ -1616,16 +1677,17 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("stale Pro forms and both merge-save races retain the enabled legacy row and history on 409", () => {
-    const rules = [DEFAULT_RULES[0], exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET }), DEFAULT_RULES[2]];
+  test("stale Pro forms and both merge-save races retain both enabled legacy routes and history on 409", () => {
+    const rules = [{ ...DEFAULT_RULES[0], to: TR_PRO_TARGET }, exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET }), DEFAULT_RULES[2]];
     const storage = legacyProStorage(rules);
     const old = formFor(htmlPage(variant, storage).payload.response.body, "preset", "pro-1yuan");
-    const latest = change(variant, storage, "upsert", "default-2tb", { to: CUSTOM_TARGET });
+    const latest = change(variant, storage, "upsert", "default-30tb", { to: CUSTOM_TARGET });
     const before = [...storage];
     const stale = submit(variant, storage, old, "preset");
     assertRejected(stale, 409, before);
     assert.equal(formFor(stale.payload.response.body, "preset", "pro-1yuan").fields.revision, latest.config.revision);
     assert.equal(formFor(stale.payload.response.body, "upsert", "legacy-pro-entry").fields.enabled, "1");
+    assert.equal(formFor(stale.payload.response.body, "upsert", "default-2tb").fields.enabled, "1");
     for (const changedRead of [2, 3]) {
       const racedStorage = legacyProStorage(rules);
       const form = formFor(htmlPage(variant, racedStorage).payload.response.body, "preset", "pro-1yuan");
@@ -1642,6 +1704,7 @@ for (const variant of VARIANTS) {
       assert(configReads >= changedRead);
       assert.equal(formFor(raced.payload.response.body, "preset", "pro-1yuan").fields.revision, concurrent.revision);
       assert.equal(formFor(raced.payload.response.body, "upsert", "legacy-pro-entry").fields.enabled, "1");
+      assert.equal(formFor(raced.payload.response.body, "upsert", "default-2tb").fields.enabled, "1");
       assert.deepEqual(exported(variant, racedStorage).data.mappingConfig.rules, concurrent.rules);
       assert(!presetCardText(raced.payload.response.body, "pro-1yuan").includes("当前规则一致"));
     }
@@ -1653,23 +1716,28 @@ for (const variant of VARIANTS) {
     const unrelated = exactRule();
     const storage = withConfig([...rules, unrelated]);
     const expectedById = {
-      "pro-1yuan": [TR_PRO_TARGET, TWENTY, THIRTY, CUSTOM_TARGET],
-      "tr-ultra-20tb": [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, THIRTY, CUSTOM_TARGET],
-      "tr-ultra-30tb": [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, TURKEY_TARGET, CUSTOM_TARGET],
-      "ultra-75p": [TR_PRO_TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET],
-      "pro-12months-90p": [TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET]
+      "pro-1yuan": [TR_PRO_TARGET, TR_PRO_TARGET, SOURCE, TWENTY, THIRTY, CUSTOM_TARGET],
+      "tr-ultra-20tb": [TR_PRO_TARGET, TR_PRO_TARGET, SOURCE, TURKEY_TWENTY_TARGET, THIRTY, CUSTOM_TARGET],
+      "tr-ultra-30tb": [TR_PRO_TARGET, TR_PRO_TARGET, SOURCE, TURKEY_TWENTY_TARGET, TURKEY_TARGET, CUSTOM_TARGET],
+      "ultra-75p": [TR_PRO_TARGET, TR_PRO_TARGET, SOURCE, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET],
+      "pro-12months-90p": [TR_PRO_TARGET, TR_PRO_TARGET, TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET]
     };
+    let monthlyIds;
     for (const preset of PRESETS) {
       const changed = change(variant, storage, "preset", preset.id);
       assertPresetRules(changed.config, preset);
-      assert.deepEqual(changed.config.rules.map(rule => rule.id), [...rules, unrelated].map(rule => rule.id));
-      assert.deepEqual(changed.config.rules.at(-1), unrelated);
-      const response = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
+      assert.deepEqual(changed.config.rules.slice(0, 4).map(rule => rule.id), [...rules, unrelated].map(rule => rule.id));
+      assert.deepEqual(changed.config.rules[3], unrelated);
+      monthlyIds ??= changed.config.rules.slice(4).map(rule => rule.id);
+      assert.deepEqual(changed.config.rules.slice(4).map(rule => rule.id), monthlyIds);
+      assert.deepEqual(withoutIds(changed.config.rules.slice(4)), presetById("pro-1yuan").rules);
+      const response = run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
       assert.deepEqual(JSON.parse(response.payload.body), expectedById[preset.id]);
     }
     const config = exported(variant, storage).data.mappingConfig;
-    assert.deepEqual(config.rules, [...DEFAULT_RULES, unrelated]);
-    assert(config.rules.every(rule => !oldTargets.includes(rule.to) && rule.to !== TURKEY_TARGET && rule.to !== TR_PRO_TARGET));
+    assert.deepEqual(config.rules.slice(0, 4), [...DEFAULT_RULES, unrelated]);
+    assert(config.rules.every(rule => !oldTargets.includes(rule.to) && rule.to !== TURKEY_TARGET));
+    assertPresetRules(config, presetById("pro-1yuan"));
     const reset = change(variant, storage, "reset");
     assert.deepEqual(reset.config.rules, DEFAULT_RULES);
     assertStored(storage, [], false);
@@ -1687,29 +1755,36 @@ for (const variant of VARIANTS) {
     ];
     const storage = withConfig(rules);
     const unrelatedIndexes = [0, 1, 2, 5];
+    let monthlyIds;
     for (const id of ["pro-1yuan", "tr-ultra-20tb", "ultra-75p", "pro-12months-90p"]) {
       const preset = presetById(id);
       const changed = change(variant, storage, "preset", id);
       assertPresetRules(changed.config, preset);
-      assert.deepEqual(changed.config.rules.map(rule => rule.id), rules.map(rule => rule.id));
+      assert.deepEqual(changed.config.rules.slice(0, rules.length).map(rule => rule.id), rules.map(rule => rule.id));
+      monthlyIds ??= changed.config.rules.slice(rules.length).map(rule => rule.id);
+      assert.deepEqual(changed.config.rules.slice(rules.length).map(rule => rule.id), monthlyIds);
+      assert.deepEqual(withoutIds(changed.config.rules.slice(rules.length)), presetById("pro-1yuan").rules);
       for (const index of unrelatedIndexes) assert.equal(JSON.stringify(changed.config.rules[index]), JSON.stringify(rules[index]));
     }
-    const values = [SOURCE, OTHER_SOURCE, "g1.ios.2tb.deep.member", TWENTY, THIRTY, COM_SOURCE, "g1.ios.12tb.fixture"];
+    const values = [SOURCE, OTHER_SOURCE, "g1.ios.2tb.deep.member", TWENTY, THIRTY, COM_SOURCE, "g1.ios.12tb.fixture", PRO_MONTHLY, AI_MONTHLY];
     const response = run(variant.script, { storage, body: JSON.stringify(values) });
     assert.deepEqual(JSON.parse(response.payload.body), ["g1.fixture.exact_override", TARGET, "g1.fixture.narrow_override",
-      DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, COM_SOURCE, "g1.fixture.broad_override"]);
+      DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, COM_SOURCE, "g1.fixture.broad_override", TR_PRO_TARGET, TR_PRO_TARGET]);
     assert(record(storage, TEST_KEY).matchedFrom.every(row => row.fallback === false));
     assert(presetCardText(htmlPage(variant, storage).payload.response.body, "pro-12months-90p").includes("当前规则一致"));
   });
 
   test("presets update existing matches at thirty rules and fill exactly one remaining slot", () => {
     const fillers = Array.from({ length: 27 }, (_, index) => exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
-    const storage = withConfig([...DEFAULT_RULES.map(rule => ({ ...rule, to: NEXT_TARGET, enabled: false })), ...fillers]);
+    const existing = [...DEFAULT_RULES, ...presetById("pro-1yuan").rules.map((rule, index) => ({ ...rule, id: "monthly-" + index }))]
+      .map(rule => ({ ...rule, to: NEXT_TARGET, enabled: false }));
+    const storage = withConfig([...existing, ...fillers.slice(0, 25)]);
     for (const preset of PRESETS) {
       const changed = change(variant, storage, "preset", preset.id);
       assert.equal(changed.config.rules.length, 30);
       assertPresetRules(changed.config, preset);
-      assert.deepEqual(changed.config.rules.slice(3), fillers);
+      assert.deepEqual(changed.config.rules.slice(0, 5).map(rule => rule.id), existing.map(rule => rule.id));
+      assert.deepEqual(changed.config.rules.slice(5), fillers.slice(0, 25));
     }
     assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, DEFAULT_RULES[2].to);
     const oneSlot = withConfig([DEFAULT_RULES[1], ...fillers,
@@ -1746,6 +1821,12 @@ for (const variant of VARIANTS) {
         const replacement = preset.rules.find(candidate => candidate.match === rule.match && candidate.from === rule.from);
         return replacement ? { ...rule, ...replacement } : rule;
       });
+      for (const rule of preset.rules.filter(rule => !DEFAULT_RULES.some(saved => saved.match === rule.match && saved.from === rule.from))) {
+        const added = first.config.rules.find(saved => saved.match === rule.match && saved.from === rule.from);
+        assert(added);
+        assert.match(added.id, /^rule-[a-f0-9]{16}(?:-[0-9]+)?$/);
+        expectedRules.push({ id: added.id, ...rule });
+      }
       assert.deepEqual(first.config.rules, expectedRules);
       assertStored(storage, expectedRules);
       assert.equal(first.config.mode, "custom");
@@ -1755,7 +1836,7 @@ for (const variant of VARIANTS) {
       const second = change(variant, storage, "preset", preset.id);
       assert.notEqual(second.config.revision, first.config.revision);
       assert.deepEqual(second.config.rules, first.config.rules);
-      assert.equal(new Set(second.config.rules.map(rule => rule.id)).size, 3);
+      assert.equal(new Set(second.config.rules.map(rule => rule.id)).size, expectedRules.length);
       assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
       assert(second.html.includes("等待下一次方案页响应读取当前配置"));
       assert(!second.html.includes("最近一次映射执行已读取当前配置"));
@@ -2047,6 +2128,272 @@ for (const variant of VARIANTS) {
     }
   });
 
+  test("public monthly sources rewrite exactly while annual, helium, ordinary 2TB and manual Ultra routes retain their own targets", () => {
+    const ultra = [
+      exactRule({ id: "manual-twenty", from: TWENTY, to: TURKEY_TWENTY_TARGET }),
+      exactRule({ id: "manual-thirty", from: THIRTY, to: TURKEY_TARGET })
+    ];
+    const storage = withConfig(ultra);
+    const changed = change(variant, storage, "preset", "pro-1yuan");
+    assert.deepEqual(changed.config.rules.slice(0, 2), ultra);
+    assert.deepEqual(withoutIds(changed.config.rules.slice(2)), presetById("pro-1yuan").rules);
+    const values = [PRO_MONTHLY, AI_MONTHLY, PRO_MONTHLY, AI_MONTHLY, AI_MONTHLY, ...NON_PRO_MONTHLY_SOURCES, TWENTY, THIRTY];
+    const body = JSON.stringify({ products: values, amount: "17.25", currency: "TWD", period: "fixture-period" }, null, 2);
+    const result = run(variant.script, { storage, body });
+    const expected = body.replaceAll(PRO_MONTHLY, TR_PRO_TARGET).replaceAll(AI_MONTHLY, TR_PRO_TARGET)
+      .replaceAll(TWENTY, TURKEY_TWENTY_TARGET).replaceAll(THIRTY, TURKEY_TARGET);
+    assert.equal(result.payload.body, expected);
+    const data = exported(variant, storage).data;
+    assert.deepEqual(data.test.matchedFrom, [
+      { id: TWENTY, to: TURKEY_TWENTY_TARGET, count: 1, fallback: false },
+      { id: PRO_MONTHLY, to: TR_PRO_TARGET, count: 2, fallback: false },
+      { id: THIRTY, to: TURKEY_TARGET, count: 1, fallback: false },
+      { id: AI_MONTHLY, to: TR_PRO_TARGET, count: 3, fallback: false }
+    ].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    assert.equal(data.test.hitCount, 7);
+    assert.equal(data.test.annualHitCount, 2);
+    assert.deepEqual(data.scan.skus.map(row => row.id), [...new Set(values)].sort());
+    assert(!data.scan.skus.some(row => row.id === TR_PRO_TARGET));
+    const html = htmlPage(variant, storage).payload.response.body;
+    assertPresetExecution(html, "pro-1yuan", 5, [[PRO_MONTHLY, 2], [AI_MONTHLY, 3]]);
+    assert(/HTTP/.test(presetSection(html)) && /StoreKit/.test(presetSection(html)));
+    assert(!/购买成功|交易成功|已成功订阅/.test(presetSection(html)));
+  });
+
+  test("applying Pro preserves all three defaults and keeps the old prefix separate from exact monthly sources", () => {
+    const storage = new Map();
+    const changed = change(variant, storage, "preset", "pro-1yuan");
+    assert.deepEqual(changed.config.rules.slice(0, 3), DEFAULT_RULES);
+    assert.equal(changed.config.rules.length, 5);
+    const values = [PRO_MONTHLY, AI_MONTHLY, ...NON_PRO_MONTHLY_SOURCES, TWENTY, THIRTY];
+    const result = run(variant.script, { storage, body: JSON.stringify(values) });
+    assert.deepEqual(JSON.parse(result.payload.body), [
+      TR_PRO_TARGET, TR_PRO_TARGET,
+      "g1.ios.ai.2tb.a.ip_1yr_10p.acq", TARGET,
+      "g1.ios.helium.m", "g1.ios.helium.a", "g1.ios.helium.m.3month_ip_75p.acq", "g1.ios.helium.a.ip_1yr_10p.acq",
+      TARGET, TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to
+    ]);
+    const html = htmlPage(variant, storage).payload.response.body;
+    assertPresetExecution(html, "pro-1yuan", 2, [[PRO_MONTHLY, 1], [AI_MONTHLY, 1]]);
+    assertPresetExecution(html, "pro-12months-90p", 3, [["g1.ios.2tb.", 3]]);
+    assertPresetExecution(html, "ultra-75p", 2, [[TWENTY, 1], [THIRTY, 1]]);
+  });
+
+  test("v7.12 broad Pro records remain historical and read-only until the explicit two-source migration", () => {
+    const rules = [{ ...DEFAULT_RULES[0], to: TR_PRO_TARGET }, { ...DEFAULT_RULES[1], to: TR_PRO_TARGET }, DEFAULT_RULES[2]];
+    const storage = legacyProStorage(rules, "g1-acq-v7.12-mappings");
+    const old = record(storage, TEST_KEY);
+    old.matchedFrom = [{ id: "g1.ios.2tb.m.3month_ip_75p", to: TR_PRO_TARGET, count: 2, fallback: false }];
+    old.hitCount = 2;
+    old.annualHitCount = 2;
+    storage.set(TEST_KEY, JSON.stringify(old));
+    const before = [...storage];
+    const page = htmlPage(variant, storage);
+    const data = exported(variant, storage).data;
+    assert.deepEqual(data.mappingConfig.rules, rules);
+    assert.equal(data.test.version, "g1-acq-v7.12-mappings");
+    assert.deepEqual(data.test.matchedFrom, old.matchedFrom);
+    assert(page.payload.response.body.includes("旧采集记录"));
+    assert(page.payload.response.body.includes("最近一次执行记录来自 <code>g1-acq-v7.12-mappings</code>"));
+    assertPresetExecution(page.payload.response.body, "pro-1yuan", "当前规则尚未应用此模板。");
+    assert.deepEqual(page.writes, []);
+    assert.deepEqual([...storage], before);
+    const originalRuntime = run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, "g1.ios.2tb.m.3month_ip_75p", TWENTY]) });
+    assert.deepEqual(JSON.parse(originalRuntime.payload.body), [TR_PRO_TARGET, AI_MONTHLY, TR_PRO_TARGET, TR_PRO_TARGET]);
+    assert.equal(storage.get(CONFIG_KEY), before[0][1]);
+    const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+    const changed = change(variant, storage, "preset", "pro-1yuan");
+    assert.deepEqual(changed.config.rules.slice(0, 3), [{ ...rules[0], enabled: false }, { ...rules[1], enabled: false }, rules[2]]);
+    assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+    assertPresetExecution(changed.html, "pro-1yuan", "等待当前配置的新响应记录。");
+    const next = run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, "g1.ios.2tb.m.3month_ip_75p", TWENTY]) });
+    assert.deepEqual(JSON.parse(next.payload.body), [TR_PRO_TARGET, TR_PRO_TARGET, "g1.ios.2tb.m.3month_ip_75p", TWENTY]);
+    assertPresetExecution(htmlPage(variant, storage).payload.response.body, "pro-1yuan", 2, [[PRO_MONTHLY, 1], [AI_MONTHLY, 1]]);
+  });
+
+  test("Pro consistency and counts exclude either enabled legacy route even when both monthly exact rules match", () => {
+    for (const twentyEnabled of [false, true]) for (const prefixEnabled of [false, true]) {
+      const rules = [
+        ...presetById("pro-1yuan").rules.map((rule, index) => ({ ...rule, id: "monthly-" + index })),
+        exactRule({ id: "legacy-twenty", from: TWENTY, to: TR_PRO_TARGET, enabled: twentyEnabled }),
+        { ...DEFAULT_RULES[0], to: TR_PRO_TARGET, enabled: prefixEnabled }
+      ];
+      const storage = withConfig(rules);
+      run(variant.script, { storage, body: JSON.stringify([PRO_MONTHLY, AI_MONTHLY, TWENTY, "g1.ios.2tb.m.3month_ip_75p"]) });
+      const html = htmlPage(variant, storage).payload.response.body;
+      const matches = !twentyEnabled && !prefixEnabled;
+      assert.equal(presetCardText(html, "pro-1yuan").includes("当前规则一致"), matches);
+      if (matches) assertPresetExecution(html, "pro-1yuan", 2, [[PRO_MONTHLY, 1], [AI_MONTHLY, 1]]);
+      else assertPresetExecution(html, "pro-1yuan", "当前规则尚未应用此模板。");
+    }
+  });
+
+  test("all five cards count their own real source repetitions independently of the global hit count", () => {
+    for (const preset of PRESETS) {
+      const storage = withConfig([exactRule()]);
+      change(variant, storage, "preset", preset.id);
+      const ids = preset.rules[0].match === "prefix" ? ["g1.ios.2tb.m.3month_ip_75p", "g1.ios.2tb.a.12month_ip_15p"] : preset.rules.map(rule => rule.from);
+      const values = [...Array(7).fill(COM_SOURCE), ...ids.flatMap((id, index) => Array(index + 2).fill(id))];
+      run(variant.script, { storage, body: JSON.stringify(values) });
+      const data = exported(variant, storage).data;
+      const total = ids.length === 1 ? 2 : 5;
+      assert.equal(data.test.hitCount, total + 7);
+      const sourceCounts = preset.rules.map((rule, index) => [rule.from, rule.match === "prefix" ? total : index + 2]);
+      const html = htmlPage(variant, storage).payload.response.body;
+      assertPresetExecution(html, preset.id, total, sourceCounts);
+      for (const other of PRESETS.filter(other => other.id !== preset.id)) {
+        assertPresetExecution(html, other.id, "当前规则尚未应用此模板。");
+      }
+    }
+  });
+
+  test("all five cards require matching execution version, revision, update time and mapping status", () => {
+    const stale = [
+      null,
+      { version: "g1-acq-v7.12-mappings" }, { version: VERSION + "-extra" }, { version: undefined },
+      { mappingRevision: "b".repeat(48) }, { mappingRevision: undefined },
+      { mappingUpdatedAt: "2034-02-03T04:05:06.789Z" }, { mappingUpdatedAt: undefined },
+      { mappingStatus: "default" }, { mappingStatus: "invalid" }, { mappingStatus: "unavailable" }, { mappingStatus: undefined }
+    ];
+    for (const preset of PRESETS) {
+      const storage = withConfig(preset.rules.map((rule, index) => ({ ...rule, id: "current-" + index })));
+      const config = exported(variant, storage).data.mappingConfig;
+      const rows = preset.rules.map((rule, index) => ({ id: rule.match === "prefix" ? "g1.ios.2tb.m.3month_ip_75p" : rule.from, to: rule.to, count: index + 2, fallback: false }));
+      for (const fields of stale) {
+        if (fields === null) storage.delete(TEST_KEY);
+        else storage.set(TEST_KEY, JSON.stringify(executionRecord(config, rows, fields)));
+        const before = [...storage];
+        const page = htmlPage(variant, storage);
+        assert(presetCardText(page.payload.response.body, preset.id).includes("当前规则一致"));
+        assertPresetExecution(page.payload.response.body, preset.id, "等待当前配置的新响应记录。");
+        assert.deepEqual(page.writes, []);
+        assert.deepEqual([...storage], before);
+      }
+      storage.set(TEST_KEY, JSON.stringify(executionRecord(config, rows)));
+      assertPresetExecution(htmlPage(variant, storage).payload.response.body, preset.id,
+        rows.reduce((sum, row) => sum + row.count, 0), preset.rules.map((rule, index) => [rule.from, index + 2]));
+    }
+  });
+
+  test("all five cards require the current template rules even when execution metadata is current", () => {
+    for (const preset of PRESETS) {
+      const base = preset.rules.map((rule, index) => ({ ...rule, id: "current-" + index }));
+      const first = base[0];
+      const states = [base.slice(1), [{ ...first, enabled: false }, ...base.slice(1)],
+        [{ ...first, to: NEXT_TARGET }, ...base.slice(1)],
+        [{ ...first, from: first.match === "prefix" ? "g1.ios.helium." : "g1.ios.helium.m" }, ...base.slice(1)]];
+      if (first.match === "exact") states.push([{ ...first, match: "prefix", from: first.from.slice(0, first.from.lastIndexOf(".") + 1) }, ...base.slice(1)]);
+      for (const rules of states) {
+        const storage = withConfig(rules);
+        const config = exported(variant, storage).data.mappingConfig;
+        assert.equal(config.status, "custom");
+        const rows = [{ id: first.match === "prefix" ? "g1.ios.2tb.m.3month_ip_75p" : first.from, to: first.to, count: 3, fallback: false }];
+        storage.set(TEST_KEY, JSON.stringify(executionRecord(config, rows)));
+        const html = htmlPage(variant, storage).payload.response.body;
+        assert(!presetCardText(html, preset.id).includes("当前规则一致"));
+        assertPresetExecution(html, preset.id, "当前规则尚未应用此模板。");
+      }
+    }
+  });
+
+  test("current no-match and non-text executions show explicit zero counts on every applied template", () => {
+    for (const preset of PRESETS) for (const body of ["g1.ios.helium.m", undefined]) {
+      const storage = withConfig(preset.rules.map((rule, index) => ({ ...rule, id: "current-" + index })));
+      const result = run(variant.script, { storage, body });
+      assert.deepEqual(result.payload, {});
+      assert.equal(record(storage, TEST_KEY).status, body === undefined ? "non-text" : "no-match");
+      assertPresetExecution(htmlPage(variant, storage).payload.response.body, preset.id, 0, preset.rules.map(rule => [rule.from, 0]));
+    }
+  });
+
+  test("template totals require the matching source and explicit actual target rather than inferred or unrelated rows", () => {
+    for (const preset of PRESETS) {
+      const storage = withConfig(preset.rules.map((rule, index) => ({ ...rule, id: "current-" + index })));
+      const config = exported(variant, storage).data.mappingConfig;
+      const first = preset.rules[0];
+      const id = first.match === "prefix" ? "g1.ios.2tb.m.3month_ip_75p" : first.from;
+      const unrelated = preset.id === "pro-12months-90p" ? AI_MONTHLY : preset.id === "pro-1yuan" ? "g1.ios.2tb.m.3month_ip_75p" : PRO_MONTHLY;
+      const rows = [
+        { id, to: first.to, count: 2, fallback: false },
+        { id, to: NEXT_TARGET, count: 11, fallback: false },
+        { id, count: 13, fallback: false },
+        { id, to: "invalid-target", count: 17, fallback: false },
+        { id: unrelated, to: first.to, count: 7, fallback: false },
+        { id: first.match === "prefix" ? first.from : first.from + ".extra", to: first.to, count: 19, fallback: false }
+      ];
+      storage.set(TEST_KEY, JSON.stringify(executionRecord(config, rows, { hitCount: 97 })));
+      const before = [...storage];
+      const html = htmlPage(variant, storage).payload.response.body;
+      assertPresetExecution(html, preset.id, 2, preset.rules.map((rule, index) => [rule.from, index === 0 ? 2 : 0]));
+      assert.deepEqual([...storage], before);
+    }
+  });
+
+  test("Pro single-source, dual-source and zero-source counts ignore dynamically added ordinary 2TB rows with the same target", () => {
+    for (const [oldCount, candidateCount] of [[0, 0], [2, 0], [0, 3], [2, 3]]) {
+      const storage = withConfig([]);
+      change(variant, storage, "preset", "pro-1yuan");
+      const ordinary = "g1.ios.2tb.m.3month_ip_75p";
+      change(variant, storage, "upsert", "", { match: "exact", from: ordinary, to: TR_PRO_TARGET, enabled: "1" });
+      const values = [...Array(oldCount).fill(PRO_MONTHLY), ...Array(candidateCount).fill(AI_MONTHLY), ...Array(7).fill(ordinary)];
+      const runtime = run(variant.script, { storage, body: JSON.stringify(values) });
+      assert.deepEqual(JSON.parse(runtime.payload.body), Array(values.length).fill(TR_PRO_TARGET));
+      assert.equal(record(storage, TEST_KEY).hitCount, oldCount + candidateCount + 7);
+      const html = htmlPage(variant, storage).payload.response.body;
+      assertPresetExecution(html, "pro-1yuan", oldCount + candidateCount, [[PRO_MONTHLY, oldCount], [AI_MONTHLY, candidateCount]]);
+      assertPresetExecution(html, "pro-12months-90p", "当前规则尚未应用此模板。");
+    }
+  });
+
+  test("coexisting Pro, Turkey and old prefix cards use independent totals from one response", () => {
+    const storage = new Map();
+    for (const id of ["pro-1yuan", "tr-ultra-20tb", "tr-ultra-30tb"]) change(variant, storage, "preset", id);
+    const values = [...Array(2).fill(PRO_MONTHLY), ...Array(3).fill(AI_MONTHLY),
+      ...Array(4).fill("g1.ios.2tb.m.3month_ip_75p"), ...Array(5).fill(TWENTY), ...Array(6).fill(THIRTY)];
+    run(variant.script, { storage, body: JSON.stringify(values) });
+    assert.equal(record(storage, TEST_KEY).hitCount, 20);
+    const html = htmlPage(variant, storage).payload.response.body;
+    assertPresetExecution(html, "pro-1yuan", 5, [[PRO_MONTHLY, 2], [AI_MONTHLY, 3]]);
+    assertPresetExecution(html, "tr-ultra-20tb", 5, [[TWENTY, 5]]);
+    assertPresetExecution(html, "tr-ultra-30tb", 6, [[THIRTY, 6]]);
+    assertPresetExecution(html, "pro-12months-90p", 4, [["g1.ios.2tb.", 4]]);
+    assertPresetExecution(html, "ultra-75p", "当前规则尚未应用此模板。");
+  });
+
+  test("a fresh execution of builtin defaults gives per-template counts without persisting configuration", () => {
+    const storage = new Map();
+    run(variant.script, { storage, body: JSON.stringify(["g1.ios.2tb.m.3month_ip_75p", TWENTY, TWENTY, THIRTY]) });
+    assert.equal(storage.has(CONFIG_KEY), false);
+    const html = htmlPage(variant, storage).payload.response.body;
+    assertPresetExecution(html, "ultra-75p", 3, [[TWENTY, 2], [THIRTY, 1]]);
+    assertPresetExecution(html, "pro-12months-90p", 1, [["g1.ios.2tb.", 1]]);
+    for (const id of ["pro-1yuan", "tr-ultra-20tb", "tr-ultra-30tb"]) assertPresetExecution(html, id, "当前规则尚未应用此模板。");
+    const before = [...storage];
+    const data = exported(variant, storage).data;
+    assert.equal(data.mappingConfig.revision, DEFAULT_REVISION);
+    assert.equal(data.test.mappingUpdatedAt, "");
+    assert.deepEqual([...storage], before);
+  });
+
+  test("invalid and unavailable configurations suppress template counts even with apparently matching saved metadata", () => {
+    for (const status of ["invalid", "unavailable"]) {
+      const storage = new Map([[CONFIG_KEY, "fixture-invalid-config"]]);
+      storage.set(TEST_KEY, JSON.stringify(executionRecord({ status, revision: status, updatedAt: "", mode: "" },
+        [{ id: PRO_MONTHLY, to: TR_PRO_TARGET, count: 3, fallback: false }])));
+      const before = [...storage];
+      const options = status === "unavailable" ? { read(key, current) { if (key === CONFIG_KEY) throw new Error("fixture-unavailable"); return current.get(key) || null; } } : {};
+      const page = htmlPage(variant, storage, options);
+      for (const preset of PRESETS) {
+        const card = presetCardText(page.payload.response.body, preset.id);
+        assert(!card.includes("当前规则一致"));
+        assert(!card.includes("最近响应：本模板命中"));
+        assert(!/：\s*\d+\s*次/.test(card));
+      }
+      assert.deepEqual(page.writes, []);
+      assert.deepEqual([...storage], before);
+    }
+  });
+
   test("historical 2TB target-origin inference uses fixed defaults rather than the edited prefix", () => {
     for (const previous of [
       { version: "g1-acq-v7.8-75p", target: TARGET, expected: TARGET, origin: "user-specified" },
@@ -2189,11 +2536,14 @@ nodeTest("applyPreset exposes stale, invalid, unavailable, over-limit and final-
 
 nodeTest("Pro cleanup leaves the returned current config and storage intact on capacity failure or revision conflict", () => {
   const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET });
-  const fillers = Array.from({ length: 29 }, (_, index) =>
+  const prefix = { ...DEFAULT_RULES[0], to: TR_PRO_TARGET };
+  const fillers = Array.from({ length: 28 }, (_, index) =>
     exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
   for (const scenario of [
-    { rules: [legacy, ...fillers], revision: "a".repeat(48), status: 400 },
-    { rules: [legacy, DEFAULT_RULES[0]], revision: "b".repeat(48), status: 409 }
+    { rules: [legacy, prefix, ...fillers], revision: "a".repeat(48), status: 400 },
+    { rules: [legacy, prefix, ...fillers.slice(0, 27)], revision: "a".repeat(48), status: 400 },
+    { rules: [legacy, prefix, exactRule({ id: "existing-monthly", from: PRO_MONTHLY, to: NEXT_TARGET, enabled: false }), ...fillers.slice(0, 27)], revision: "a".repeat(48), status: 400 },
+    { rules: [legacy, prefix], revision: "b".repeat(48), status: 409 }
   ]) {
     const storage = legacyProStorage(scenario.rules);
     const harness = engineHarness({ storage });
@@ -2208,7 +2558,7 @@ nodeTest("Pro cleanup leaves the returned current config and storage intact on c
     assert.deepEqual(harness.writes, []);
     assert.deepEqual([...storage], before);
   }
-  const rules = [legacy, DEFAULT_RULES[0]];
+  const rules = [legacy, prefix];
   const concurrent = storedConfig([...rules, exactRule()], { revision: "b".repeat(48) });
   const storage = legacyProStorage(rules);
   const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
@@ -2227,6 +2577,66 @@ nodeTest("Pro cleanup leaves the returned current config and storage intact on c
   assert.deepEqual(harness.writes, []);
   assert.equal(storage.get(CONFIG_KEY), JSON.stringify(concurrent));
   assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+});
+
+nodeTest("isLegacyProRule recognizes only the two retired Gemini routes independently of enabled state", () => {
+  const harness = engineHarness();
+  for (const [match, from] of [["exact", TWENTY], ["prefix", "g1.ios.2tb."]]) {
+    for (const enabled of [undefined, false, true]) {
+      const rule = Object.freeze({ match, from, to: TR_PRO_TARGET, enabled });
+      assert.equal(harness.invoke("isLegacyProRule", rule), true);
+      for (const change of [
+        { to: TARGET }, { to: TURKEY_TWENTY_TARGET }, { to: NEXT_TARGET },
+        { to: TR_PRO_TARGET + ".extra" }, { to: undefined },
+        { match: match === "exact" ? "prefix" : "exact" }, { match: "Exact" }, { match: undefined },
+        { from: from + ".extra" }, { from: PRO_MONTHLY }, { from: AI_MONTHLY }, { from: THIRTY }, { from: undefined }
+      ]) {
+        assert.equal(harness.invoke("isLegacyProRule", { ...rule, ...change }), false, JSON.stringify({ ...rule, ...change }));
+      }
+    }
+  }
+  for (const rule of [undefined, null, false, 0, "", {}, [], "g1.ios.20tb.m.v2"]) {
+    assert.equal(harness.invoke("isLegacyProRule", rule), false);
+  }
+  assert.deepEqual(harness.reads, []);
+  assert.deepEqual(harness.writes, []);
+});
+
+nodeTest("Pro persistence failures retain both enabled legacy routes and return an unmodified current config", () => {
+  const rules = [
+    exactRule({ id: "legacy-twenty", from: TWENTY, to: TR_PRO_TARGET }),
+    { ...DEFAULT_RULES[0], to: TR_PRO_TARGET },
+    exactRule({ id: "existing-monthly", from: PRO_MONTHLY, to: NEXT_TARGET, enabled: false }),
+    DEFAULT_RULES[2]
+  ];
+  for (const fault of [
+    { writeAvailable: false },
+    { write() { return false; } },
+    { write() { throw new Error("fixture-pro-write"); } },
+    { write() { return true; } }
+  ]) {
+    const storage = legacyProStorage(rules, "g1-acq-v7.12-mappings");
+    const harness = engineHarness({ storage, ...fault });
+    const current = harness.invoke("read");
+    const snapshot = plain(current);
+    const before = [...storage];
+    const result = plain(harness.invoke("applyPreset", current.revision, "pro-1yuan"));
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 503);
+    assert.deepEqual(result.config, snapshot);
+    assert.deepEqual(plain(current), snapshot);
+    assert.deepEqual([...storage], before);
+    assert.equal(harness.writes.length, fault.writeAvailable === false ? 0 : 1);
+    for (const write of harness.writes) {
+      assert.equal(write.key, CONFIG_KEY);
+      const attempted = JSON.parse(write.value);
+      assert.deepEqual(attempted.rules.slice(0, 2), rules.slice(0, 2).map(rule => ({ ...rule, enabled: false })));
+      assert.deepEqual(attempted.rules[2], { ...rules[2], to: TR_PRO_TARGET, enabled: true });
+      assert.deepEqual(attempted.rules[3], rules[3]);
+      assertPresetRules(attempted, presetById("pro-1yuan"));
+      assert.equal(attempted.rules.length, 5);
+    }
+  }
 });
 
 nodeTest("mapping config generated blocks and aliases share the real engine and --check is read-only", () => {
