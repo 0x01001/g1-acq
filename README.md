@@ -14,7 +14,7 @@ Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **
 
 ## 主模块安装地址
 
-**G1 ACQ SKU 管理 — 三套预制模板与本地手动映射，保留默认 75p 与 2TB 目标**
+**G1 ACQ SKU 管理 — 四套预制模板与本地手动映射，保留默认 75p 与 2TB 目标**
 
 ```text
 https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.11.0/g1-acq-ultra-discount.sgmodule
@@ -43,7 +43,8 @@ https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.11.0/g1-acq-ultra-discount.sgmodul
 报告的 **预制映射模板** 位于手动规则前，按以下顺序展示；点击卡片的 **应用模板** 即提交原生 POST，成功后以 **303** 返回报告，并提示模板已保存到本机、下一次匹配响应读取新配置。
 
 | 模板 | 匹配方式 | 完整源 → 目标 |
-|---|---|---|
+|---|---|
+| **1 元开 Pro**（`pro-1yuan`） | 精确 `exact` | `g1.ios.20tb.m.v2` → `com.google.gemini.2tb.ai.m.3month_ip_99p` |
 | **土区 30TB · 2949.99 里拉记录**（`tr-ultra-30tb`） | 精确 `exact` | `g1.ios.30tb.ai.pro.m` → `g1.ios.30tb.m` |
 | **Ultra 20TB / 30TB · 三个月 75p**（`ultra-75p`） | 两条精确 `exact` | `g1.ios.20tb.m.v2` → `g1.20tb.3months_ip_75p.acq`<br>`g1.ios.30tb.ai.pro.m` → `g1.ai.ultra.3months_ip_75p.acq` |
 | **2TB / Pro · 12个月 90p**（`pro-12months-90p`） | 前缀 `prefix` | `g1.ios.2tb.` → `g1.2tb.ai.12months_ip_90p` |
