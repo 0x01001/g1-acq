@@ -3,8 +3,8 @@
 
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.11.0";
-  var COLLECTOR_VERSION = "g1-acq-v7.11-mappings";
+  var VERSION = "v7.12.0";
+  var COLLECTOR_VERSION = "g1-acq-v7.12-mappings";
   var MODE_NAMES = {
     discount75: "Ultra 三个月 75p（2.5折）",
     custom: "手动映射",
@@ -45,9 +45,17 @@ function createG1MappingConfig(store) {
       {
         id: "pro-1yuan",
         title: "1 元开 Pro（前三月约 1 元/月）",
-        description: "实测成功：改写后收银台前三月约 1 元/月，入口选 Ultra 5x，实际到手 Pro。周期与金额按 App Store 面板核对。",
+        description: "使用 Pro 自身的 2TB 前缀；应用后重新进入 Pro 方案页，实际金额与周期查看 App Store。",
         rules: [
-          { match: "exact", from: "g1.ios.20tb.m.v2", to: "com.google.gemini.2tb.ai.m.3month_ip_99p", enabled: true }
+          { match: "prefix", from: SOURCE_PREFIX, to: "com.google.gemini.2tb.ai.m.3month_ip_99p", enabled: true }
+        ]
+      },
+      {
+        id: "tr-ultra-20tb",
+        title: "土区 20TB · 1989.99 里拉记录",
+        description: "旧 iOS 20TB 编号；公开记录报价为 1989.99 里拉，实际金额与周期查看 App Store。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: "g1.ios.20tb.m", enabled: true }
         ]
       },
       {
@@ -264,6 +272,11 @@ function createG1MappingConfig(store) {
     rules.forEach(function (rule, index) {
       ids[rule.id] = true;
       positions[rule.match + ":" + rule.from] = index;
+      // Retire only the old Pro template's 20TB route, in the same atomic save.
+      if (presetId === "pro-1yuan" && rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2" &&
+          rule.to === selected.rules[0].to && rule.enabled) {
+        rules[index] = { id: rule.id, match: rule.match, from: rule.from, to: rule.to, enabled: false };
+      }
     });
     selected.rules.forEach(function (rule) {
       var source = rule.match + ":" + rule.from;
@@ -695,14 +708,22 @@ function createG1MappingConfig(store) {
   }
   function presetTemplates() {
     return "<section id=mapping-presets><h2>预制映射模板</h2>" +
-      "<p>点击“应用模板”直接保存：更新并启用相同匹配方式与原始 SKU 的规则，保留其他手动规则和历史记录。</p>" +
-      "<p class=note>保存后重新进入方案页，下一次匹配响应使用新配置。“当前规则一致”只比较本地配置；实际执行结果见下方记录。</p>" +
+      "<p>安装升级后，点击“应用模板”才会保存对应规则；升级本身保留现有配置。相同匹配方式与原始 SKU 的规则会更新并启用，其他手动规则和历史记录保留。</p>" +
+      "<p class=note>1 元 Pro 与土区 20TB 可以同时使用。1 元 Pro 和 12个月 Pro 模板切换同一 Pro 前缀；土区 20TB 与 Ultra 75p 切换 20TB 入口。</p>" +
+      "<p class=note>应用 1 元 Pro 会停用旧版遗留的“20TB → 1 元 Pro”规则，20TB 的其他目标保持原值；随后从 Pro 自身方案页进入。</p>" +
+      "<p class=note>保存后重新进入方案页，下一次匹配响应使用新配置。“当前规则一致”只比较本地配置；核对下方最近执行的脚本版本、配置修订和实际目标。</p>" +
       "<div class=preset-grid>" + presetCatalog.map(function (preset) {
         var matches = validConfig && preset.rules.every(function (target) {
           return config.rules.some(function (rule) {
             return rule.match === target.match && rule.from === target.from && rule.to === target.to && rule.enabled;
           });
         });
+        if (matches && preset.id === "pro-1yuan") {
+          matches = !config.rules.some(function (rule) {
+            return rule.enabled && rule.match === "exact" && rule.from === "g1.ios.20tb.m.v2" &&
+              rule.to === preset.rules[0].to;
+          });
+        }
         var pairs = preset.rules.map(function (rule) {
           return "<div class=preset-pair><span class=note>" + (rule.match === "exact" ? "完整 SKU" : "SKU 前缀") +
             "</span><code>" + escape(rule.from) + "</code><span aria-label=替换为>↓</span><code>" + escape(rule.to) + "</code></div>";
@@ -726,9 +747,9 @@ function createG1MappingConfig(store) {
       revisionInput() + "<input type=hidden name=id value=\"" + escape(rule.id) + "\">" +
       "<div class=fields><label>匹配方式<select name=match required>" + select + "</select></label>" +
       "<label class=check><input type=checkbox name=enabled value=1" + (draft.enabled ? " checked" : "") + ">启用这条规则</label>" +
-      "<label>原始 SKU<input name=from type=text list=sku-candidates required maxlength=175 pattern=\"(?:g1\\.|com\\.google\\.(?:one|gemini)\\.)[A-Za-z0-9._\\-]{1,160}\" autocomplete=off autocapitalize=none spellcheck=false value=\"" +
+      "<label>原始 SKU<input name=from type=text list=sku-candidates required maxlength=178 pattern=\"(?:g1\\.|com\\.google\\.(?:one|gemini)\\.)[A-Za-z0-9._\\-]{1,160}\" autocomplete=off autocapitalize=none spellcheck=false value=\"" +
       escape(draft.from.slice(0, 300)) + "\" placeholder=\"g1.ios.20tb.m.v2\"></label>" +
-      "<label>目标 SKU<input name=to type=text list=sku-candidates required maxlength=175 pattern=\"(?:g1\\.|com\\.google\\.(?:one|gemini)\\.)[A-Za-z0-9._\\-]{0,159}[A-Za-z0-9_\\-]\" autocomplete=off autocapitalize=none spellcheck=false value=\"" +
+      "<label>目标 SKU<input name=to type=text list=sku-candidates required maxlength=178 pattern=\"(?:g1\\.|com\\.google\\.(?:one|gemini)\\.)[A-Za-z0-9._\\-]{0,159}[A-Za-z0-9_\\-]\" autocomplete=off autocapitalize=none spellcheck=false value=\"" +
       escape(draft.to.slice(0, 300)) + "\" placeholder=\"g1.20tb.3months_ip_75p.acq\"></label></div>" +
       "<div class=actions><button class=primary type=submit name=action value=upsert>" + (isNew ? "添加并保存" : "保存这条映射") + "</button>" +
       (isNew ? "" : "<button class=delete type=submit name=action value=delete formnovalidate>删除这条映射</button>") + "</div></fieldset></form>";
@@ -741,6 +762,11 @@ function createG1MappingConfig(store) {
     if (!validConfig) parts.push("<p class=error role=alert>" + escape(config.error) + "</p>");
     else if (applied) parts.push("<p class=success>最近一次映射执行已读取当前配置；当次改写 " + report.test.hitCount + " 次。</p>");
     else parts.push("<p class=note>等待下一次方案页响应读取当前配置；保存后重新进入 Google App 方案页，再刷新这里核对。</p>");
+    if (report.test.version && report.test.version !== COLLECTOR_VERSION) {
+      parts.push("<p class=note>最近一次执行记录来自 <code>" + escape(report.test.version) +
+        "</code>，本版响应脚本为 <code>" + escape(COLLECTOR_VERSION) +
+        "</code>。旧记录会保留；重新进入方案页后若执行版本仍未更新，关闭旧模块并重新加载本版脚本。</p>");
+    }
     if (validConfig && enabledCount === 0) parts.push("<p class=note>当前没有启用的规则：继续采集，响应正文保持原样。</p>");
     if (!writable) parts.push("<p class=error>本地映射存储暂未就绪，编辑按钮已停用。</p>");
     parts.push("<p class=note>完整 SKU 优先；前缀规则按更长的前缀优先，前缀需以点结尾。停用的规则不参与匹配；每个原始编号只替换一次，目标不会继续串联替换。</p>");

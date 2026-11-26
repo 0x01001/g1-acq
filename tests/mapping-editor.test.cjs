@@ -12,8 +12,8 @@ const ORIGIN = "https://one.google.com";
 const CONFIG_KEY = "g1.sku.mappings.v1";
 const SCAN_KEY = "g1.sku.scan.v1";
 const TEST_KEY = "g1.pro.annual.test.v1";
-const VERSION = "g1-acq-v7.11-mappings";
-const REPORT_VERSION = "v7.11.0";
+const VERSION = "g1-acq-v7.12-mappings";
+const REPORT_VERSION = "v7.12.0";
 const DEFAULT_REVISION = "defaults-75p-v1";
 const TARGET = "g1.2tb.ai.12months_ip_90p";
 const SOURCE = "g1.ios.2tb.fixture_monthly";
@@ -25,13 +25,20 @@ const CUSTOM_TARGET = "com.google.one.fixture_annual";
 const NEXT_TARGET = "g1.fixture.next_offer";
 const FIXED_TIME = "2026-11-23T07:40:06.325Z";
 const TURKEY_TARGET = "g1.ios.30tb.m";
+const TURKEY_TWENTY_TARGET = "g1.ios.20tb.m";
 const TR_PRO_TARGET = "com.google.gemini.2tb.ai.m.3month_ip_99p";
+const GEMINI_NAMESPACE = "com.google.gemini.";
 // Independent contract fixtures: catalog rules deliberately have no persistent IDs.
 const PRESETS = [
   {
     id: "pro-1yuan", title: "1 元开 Pro（前三月约 1 元/月）",
-    description: "实测成功：改写后收银台前三月约 1 元/月，入口选 Ultra 5x，实际到手 Pro。周期与金额按 App Store 面板核对。",
-    rules: [{ match: "exact", from: TWENTY, to: TR_PRO_TARGET, enabled: true }]
+    description: "使用 Pro 自身的 2TB 前缀；应用后重新进入 Pro 方案页，实际金额与周期查看 App Store。",
+    rules: [{ match: "prefix", from: "g1.ios.2tb.", to: TR_PRO_TARGET, enabled: true }]
+  },
+  {
+    id: "tr-ultra-20tb", title: "土区 20TB · 1989.99 里拉记录",
+    description: "旧 iOS 20TB 编号；公开记录报价为 1989.99 里拉，实际金额与周期查看 App Store。",
+    rules: [{ match: "exact", from: TWENTY, to: TURKEY_TWENTY_TARGET, enabled: true }]
   },
   {
     id: "tr-ultra-30tb", title: "土区 30TB · 2949.99 里拉记录",
@@ -203,6 +210,23 @@ function formFor(html, action, id) {
   return matches[0];
 }
 
+function nativeSkuControl(form, field) {
+  const control = form.controls.find(control => control.name === field);
+  assert(control, "missing native " + field + " control");
+  assert.equal(control.type, "text");
+  assert.equal(Number(control.maxlength), 178, field + " must accept the complete Gemini namespace and 160-character suffix");
+  assert("required" in control);
+  assert(control.pattern, field + " must expose native SKU validation");
+  // Native HTML pattern attributes use UnicodeSets (v) and match the whole value.
+  return { control, pattern: new RegExp("^(?:" + control.pattern + ")$(?![\\s\\S])", "v") };
+}
+
+function assertNativeSkuValue(form, field, value) {
+  const { control, pattern } = nativeSkuControl(form, field);
+  assert(value.length <= Number(control.maxlength), field + " must fit without browser truncation");
+  assert(pattern.test(value), field + " must satisfy the rendered native pattern");
+}
+
 function formBody(form, action, changes = {}) {
   assert.equal(form.disabled, false, "native submission requires an enabled fieldset");
   assert(form.actions.has(action), "submit an action offered by the real HTML form");
@@ -253,6 +277,25 @@ function exactRule(overrides = {}) {
   return { id: "fixture-rule", match: "exact", from: COM_SOURCE, to: CUSTOM_TARGET, enabled: true, ...overrides };
 }
 
+function legacyProStorage(rules) {
+  const storage = withConfig(rules);
+  const version = "g1-acq-v7.11-mappings";
+  storage.set(SCAN_KEY, JSON.stringify({
+    schemaVersion: 1, version, mode: "custom", updatedAt: FIXED_TIME,
+    scannedResponses: 4, matchedResponses: 4, nonTextResponses: 0, limit: 300, truncated: false,
+    skus: [{ id: TWENTY, count: 4, lastSeen: FIXED_TIME }],
+    recentResponses: [{ at: FIXED_TIME, path: "/ai", bodyType: "text", status: "known-skus",
+      candidateCount: 1, addedCount: 0, omittedCount: 0 }]
+  }));
+  storage.set(TEST_KEY, JSON.stringify({
+    schemaVersion: 1, version, mode: "custom", updatedAt: FIXED_TIME,
+    target: TARGET, targetOrigin: "user-configured", status: "rewritten", hitCount: 1, annualHitCount: 0,
+    mappingRevision: "a".repeat(48), mappingUpdatedAt: FIXED_TIME, mappingStatus: "custom",
+    matchedFrom: [{ id: TWENTY, to: TR_PRO_TARGET, count: 1, fallback: false }]
+  }));
+  return storage;
+}
+
 function assertISO(value) {
   assert.match(value, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(new Date(value).toISOString(), value);
@@ -293,6 +336,12 @@ function assertNoScript(response) {
   assert.deepEqual(directives.get("form-action"), [ROOT]);
 }
 
+function presetById(id) {
+  const preset = PRESETS.find(entry => entry.id === id);
+  assert(preset, "unknown fixture preset " + id);
+  return preset;
+}
+
 function presetSection(html) {
   const section = [...html.matchAll(/<section\b([^>]*)>([\s\S]*?)<\/section\s*>/gi)]
     .find(match => attributes(match[1]).id === "mapping-presets");
@@ -302,7 +351,7 @@ function presetSection(html) {
 
 function presetCardText(html, id) {
   const text = decodeHTML(presetSection(html).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ");
-  const preset = PRESETS.find(entry => entry.id === id);
+  const preset = presetById(id);
   const start = text.indexOf(preset.title);
   assert(start >= 0, "missing preset title " + id);
   const next = PRESETS.map(entry => text.indexOf(entry.title, start + preset.title.length)).filter(index => index >= 0);
@@ -388,11 +437,7 @@ for (const variant of VARIANTS) {
         assert.equal(form.fields.to, rule.to);
         assert.equal(form.fields.enabled, "1");
         assert(form.controls.some(control => control.name === "enabled" && control.type === "checkbox" && control.value === "1"));
-        for (const field of ["from", "to"]) {
-          const control = form.controls.find(control => control.name === field);
-          assert(control && Number(control.maxlength) > 0);
-          assert(control.pattern, field + " must expose a native pattern hint");
-        }
+        for (const field of ["from", "to"]) assertNativeSkuValue(form, field, rule[field]);
         const remove = formFor(page.payload.response.body, "delete", rule.id);
         const button = remove.buttons.find(button => button.name === "action" && button.value === "delete") || remove.buttons[0];
         assert(button && "formnovalidate" in button);
@@ -724,8 +769,8 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("the 160-character suffix boundary works in both namespaces for exact and prefix sources", () => {
-    for (const namespace of ["g1.", "com.google.one."]) {
+  test("the 160-character suffix boundary works in all three namespaces for exact and prefix sources", () => {
+    for (const namespace of ["g1.", "com.google.one.", GEMINI_NAMESPACE]) {
       for (const match of ["exact", "prefix"]) {
         const from = namespace + "a".repeat(match === "prefix" ? 159 : 160) + (match === "prefix" ? "." : "");
         const to = (namespace === "g1." ? "com.google.one." : "g1.") + "b".repeat(160);
@@ -735,6 +780,121 @@ for (const variant of VARIANTS) {
         if (match === "exact") assert.equal(run(variant.script, { storage, body: from }).payload.body, to);
       }
     }
+  });
+
+  test("178-character Gemini exact sources and targets survive native POST, runtime, JSON and HTML", () => {
+    const from = GEMINI_NAMESPACE + "s".repeat(160);
+    const to = GEMINI_NAMESPACE + "t".repeat(160);
+    assert.equal(from.length, 178);
+    assert.equal(to.length, 178);
+    const storage = withConfig([]);
+    const form = formFor(htmlPage(variant, storage).payload.response.body, "upsert", "");
+    assertNativeSkuValue(form, "from", from);
+    assertNativeSkuValue(form, "to", to);
+    const html = assertRedirect(variant, submit(variant, storage, form, "upsert", { match: "exact", from, to, enabled: "1" }), "saved");
+    const saved = record(storage, CONFIG_KEY);
+    assert.equal(saved.rules.length, 1);
+    assert.deepEqual(saved.rules[0], exactRule({ id: saved.rules[0].id, from, to }));
+    const edit = formFor(html, "upsert", saved.rules[0].id);
+    assert.equal(edit.fields.from, from);
+    assert.equal(edit.fields.to, to);
+    assertNativeSkuValue(edit, "from", from);
+    assertNativeSkuValue(edit, "to", to);
+    const body = JSON.stringify({ products: [from, from, to], price: "178.00", cycle: "fixture-cycle" });
+    const runtime = run(variant.script, { storage, body });
+    assert.equal(runtime.payload.body, JSON.stringify({ products: [to, to, to], price: "178.00", cycle: "fixture-cycle" }));
+    const data = exported(variant, storage).data;
+    assert.deepEqual(data.mappingConfig.rules, saved.rules);
+    assert.equal(data.test.version, VERSION);
+    assert.equal(data.test.mappingRevision, saved.revision);
+    assert.equal(data.test.hitCount, 2);
+    assert.deepEqual(data.test.matchedFrom, [{ id: from, to, count: 2, fallback: false }]);
+    assert.deepEqual(data.scan.skus.map(row => [row.id, row.count]), [[from, 2], [to, 1]].sort());
+    const rendered = htmlPage(variant, storage).payload.response.body;
+    assert.equal(formFor(rendered, "upsert", saved.rules[0].id).fields.from, from);
+    assert.equal(formFor(rendered, "upsert", saved.rules[0].id).fields.to, to);
+    assert(rendered.includes("<code>" + from + "</code>"));
+    assert(rendered.includes("<code>" + to + "</code>"));
+    assert.equal(storage.get(CONFIG_KEY), JSON.stringify(saved));
+  });
+
+  test("Gemini prefix and 178-character target retain full native values and match a complete boundary token", () => {
+    const from = GEMINI_NAMESPACE + "p".repeat(158) + ".";
+    const source = from + "x";
+    const to = GEMINI_NAMESPACE + "t".repeat(160);
+    assert.equal(source.length, 178);
+    const storage = withConfig([]);
+    const form = formFor(htmlPage(variant, storage).payload.response.body, "upsert", "");
+    assertNativeSkuValue(form, "from", from);
+    assertNativeSkuValue(form, "to", to);
+    const html = assertRedirect(variant, submit(variant, storage, form, "upsert", { match: "prefix", from, to, enabled: "1" }), "saved");
+    const saved = record(storage, CONFIG_KEY);
+    const edit = formFor(html, "upsert", saved.rules[0].id);
+    assert.equal(edit.fields.match, "prefix");
+    assert.equal(edit.fields.from, from);
+    assert.equal(edit.fields.to, to);
+    assertNativeSkuValue(edit, "from", from);
+    assertNativeSkuValue(edit, "to", to);
+    const runtime = run(variant.script, { storage, body: JSON.stringify([source, from, source + "x"]) });
+    assert.deepEqual(JSON.parse(runtime.payload.body), [to, from, source + "x"]);
+    const data = exported(variant, storage).data;
+    assert.deepEqual(data.mappingConfig.rules, saved.rules);
+    assert.deepEqual(data.test.matchedFrom, [{ id: source, to, count: 1, fallback: false }]);
+    assert.equal(data.test.mappingRevision, saved.revision);
+    assert(data.scan.skus.some(row => row.id === source));
+    const rendered = htmlPage(variant, storage).payload.response.body;
+    assert.equal(formFor(rendered, "upsert", saved.rules[0].id).fields.from, from);
+    assert.equal(formFor(rendered, "upsert", saved.rules[0].id).fields.to, to);
+    assert(rendered.includes("<code>" + source + "</code>"));
+    assert(rendered.includes("<code>" + to + "</code>"));
+  });
+
+  test("the full 178-character Gemini prefix round-trips while its 161-character suffix extension stays unmatched", () => {
+    const from = GEMINI_NAMESPACE + "p".repeat(159) + ".";
+    const to = GEMINI_NAMESPACE + "t".repeat(160);
+    assert.equal(from.length, 178);
+    const storage = withConfig([]);
+    const form = formFor(htmlPage(variant, storage).payload.response.body, "upsert", "");
+    assertNativeSkuValue(form, "from", from);
+    assertNativeSkuValue(form, "to", to);
+    const html = assertRedirect(variant, submit(variant, storage, form, "upsert", { match: "prefix", from, to, enabled: "1" }), "saved");
+    const saved = record(storage, CONFIG_KEY);
+    assert.equal(formFor(html, "upsert", saved.rules[0].id).fields.from, from);
+    assert.equal(formFor(html, "upsert", saved.rules[0].id).fields.to, to);
+    assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, saved.rules);
+    const runtime = run(variant.script, { storage, body: JSON.stringify([from, from + "x"]) });
+    assert.deepEqual(runtime.payload, {});
+    const data = exported(variant, storage).data;
+    assert.equal(data.test.status, "no-match");
+    assert.deepEqual(data.test.matchedFrom, []);
+    assert.deepEqual(data.mappingConfig.rules, saved.rules);
+    assert.equal(formFor(htmlPage(variant, storage).payload.response.body, "upsert", saved.rules[0].id).fields.from, from);
+  });
+
+  test("Gemini suffix161 fails native patterns and authoritative POST without changing configuration or history", () => {
+    const tooLong = GEMINI_NAMESPACE + "s".repeat(161);
+    const prefixTooLong = GEMINI_NAMESPACE + "p".repeat(160) + ".";
+    assert.equal(tooLong.length, 179);
+    assert.equal(prefixTooLong.length, 179);
+    const storage = legacyProStorage(DEFAULT_RULES);
+    const before = [...storage];
+    const form = formFor(htmlPage(variant, storage).payload.response.body, "upsert", "");
+    const base = { match: "exact", from: COM_SOURCE, to: CUSTOM_TARGET, enabled: "1" };
+    for (const [field, fields] of [
+      ["from", { from: tooLong }], ["to", { to: tooLong }],
+      ["from", { match: "prefix", from: prefixTooLong }]
+    ]) {
+      const { control, pattern } = nativeSkuControl(form, field);
+      assert(fields[field].length > Number(control.maxlength));
+      assert.equal(pattern.test(fields[field]), false, field + " must reject suffix161 independently of maxlength");
+      // Bypass native validation to exercise the POST boundary as well.
+      const rejected = submit(variant, storage, form, "upsert", { ...base, ...fields });
+      assertRejected(rejected, 400, before);
+      const draft = formFor(rejected.payload.response.body, "upsert", "");
+      assert.equal(draft.fields[field], fields[field], "failed form values remain complete for correction");
+    }
+    assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, DEFAULT_RULES);
+    assert.deepEqual([...storage], before);
   });
 
   test("two open forms reject a stale save and show the latest revision and values", () => {
@@ -1188,7 +1348,7 @@ for (const variant of VARIANTS) {
         assert(card.includes(rule.match === "exact" ? "完整 SKU" : "前缀"));
         assert(candidates.has(rule.to), "preset target belongs in the datalist");
       }
-      assert.equal(card.includes("当前规则一致"), preset.id !== "tr-ultra-30tb" && preset.id !== "pro-1yuan");
+      assert.equal(card.includes("当前规则一致"), ["ultra-75p", "pro-12months-90p"].includes(preset.id));
     }
     assert(!section.includes("1month_eft"));
     assert(!section.includes("3months_ip_90p"));
@@ -1244,7 +1404,7 @@ for (const variant of VARIANTS) {
       assert.equal(data.test.mappingStatus, "custom");
       assert.equal(data.test.mode, "custom");
       assert.equal(data.test.hitCount, expected.filter((value, index) => value !== values[index]).length);
-      assert.equal(data.test.annualHitCount, preset.id === "pro-12months-90p" ? 2 : 0);
+      assert.equal(data.test.annualHitCount, ["pro-1yuan", "pro-12months-90p"].includes(preset.id) ? 2 : 0);
       assert(data.test.matchedFrom.every(row => row.fallback === false));
       assert.deepEqual(data.test.matchedFrom.map(row => [row.id, row.to]).sort(),
         values.flatMap((id, index) => id === expected[index] ? [] : [[id, expected[index]]]).sort());
@@ -1256,22 +1416,256 @@ for (const variant of VARIANTS) {
     });
   }
 
-  test("Turkey then Ultra 75p and Pro restore current targets without reviving historical offers", () => {
+  test("Pro and TR20 coexist in either order while Ultra75p and Pro12 switch only their own sources", () => {
+    const twenty75 = DEFAULT_RULES.find(rule => rule.id === "default-20tb").to;
+    const thirty75 = DEFAULT_RULES.find(rule => rule.id === "default-30tb").to;
+    const sequences = [
+      [
+        { id: "pro-1yuan", targets: [TR_PRO_TARGET, twenty75, thirty75] },
+        { id: "tr-ultra-20tb", targets: [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, thirty75] },
+        { id: "ultra-75p", targets: [TR_PRO_TARGET, twenty75, thirty75] },
+        { id: "pro-1yuan", targets: [TR_PRO_TARGET, twenty75, thirty75] }
+      ],
+      [
+        { id: "tr-ultra-20tb", targets: [TARGET, TURKEY_TWENTY_TARGET, thirty75] },
+        { id: "pro-1yuan", targets: [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, thirty75] },
+        { id: "pro-12months-90p", targets: [TARGET, TURKEY_TWENTY_TARGET, thirty75] }
+      ]
+    ];
+    for (const sequence of sequences) {
+      const storage = new Map();
+      run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY]) });
+      let previousRevision = DEFAULT_REVISION;
+      for (const step of sequence) {
+        const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+        const changed = change(variant, storage, "preset", step.id);
+        assertPresetRules(changed.config, presetById(step.id));
+        assert.deepEqual(changed.config.rules, DEFAULT_RULES.map((rule, index) => ({ ...rule, to: step.targets[index] })));
+        assert.notEqual(changed.config.revision, previousRevision);
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+        assert(changed.html.includes("等待下一次方案页响应读取当前配置"));
+        assert(!changed.html.includes("最近一次映射执行已读取当前配置"));
+        const badges = {
+          "pro-1yuan": step.targets[0] === TR_PRO_TARGET,
+          "tr-ultra-20tb": step.targets[1] === TURKEY_TWENTY_TARGET,
+          "tr-ultra-30tb": false,
+          "ultra-75p": step.targets[1] === twenty75 && step.targets[2] === thirty75,
+          "pro-12months-90p": step.targets[0] === TARGET
+        };
+        for (const [id, matches] of Object.entries(badges)) {
+          assert.equal(presetCardText(changed.html, id).includes("当前规则一致"), matches, step.id + " -> " + id);
+        }
+        const runtime = run(variant.script, { storage, body: JSON.stringify([SOURCE, OTHER_SOURCE, TWENTY, THIRTY]) });
+        assert.deepEqual(JSON.parse(runtime.payload.body), [step.targets[0], step.targets[0], step.targets[1], step.targets[2]]);
+        const data = exported(variant, storage).data;
+        assert.equal(data.configuredTarget, step.targets[0]);
+        assert.equal(data.test.target, step.targets[0]);
+        assert.equal(data.test.targetOrigin, "user-configured");
+        assert.equal(data.test.version, VERSION);
+        assert.equal(data.test.mappingRevision, changed.config.revision);
+        assert.equal(data.test.hitCount, 4);
+        assert.equal(data.test.annualHitCount, 2);
+        assert.deepEqual(data.test.matchedFrom.map(row => [row.id, row.to]).sort(),
+          [[SOURCE, step.targets[0]], [OTHER_SOURCE, step.targets[0]], [TWENTY, step.targets[1]], [THIRTY, step.targets[2]]].sort());
+        assert(htmlPage(variant, storage).payload.response.body.includes("最近一次映射执行已读取当前配置"));
+        previousRevision = changed.config.revision;
+      }
+    }
+  });
+
+  test("v7.11 legacy 20TB to Gemini stays historical on GET and remains configured until Pro is applied", () => {
+    const rules = DEFAULT_RULES.map(rule => rule.from === TWENTY ? { ...rule, to: TR_PRO_TARGET } : rule);
+    const storage = legacyProStorage(rules);
+    const before = [...storage];
+    const page = htmlPage(variant, storage);
+    const data = exported(variant, storage).data;
+    assert.deepEqual(data.mappingConfig.rules, rules);
+    assert.equal(data.scan.version, "g1-acq-v7.11-mappings");
+    assert.equal(data.test.version, "g1-acq-v7.11-mappings");
+    assert.deepEqual(data.test.matchedFrom, [{ id: TWENTY, to: TR_PRO_TARGET, count: 1, fallback: false }]);
+    assert(page.payload.response.body.includes("旧采集记录"));
+    assert(page.payload.response.body.includes("最近一次执行记录来自 <code>g1-acq-v7.11-mappings</code>"));
+    assert(!page.payload.response.body.includes("最近一次映射执行已读取当前配置"));
+    assert(!presetCardText(page.payload.response.body, "pro-1yuan").includes("当前规则一致"));
+    assert.deepEqual(page.writes, []);
+    assert.deepEqual([...storage], before);
+    const runtime = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY]) });
+    assert.deepEqual(JSON.parse(runtime.payload.body), [TARGET, TR_PRO_TARGET]);
+    assert.equal(storage.get(CONFIG_KEY), before.find(([key]) => key === CONFIG_KEY)[1]);
+    assert.deepEqual(runtime.writes.map(write => write.key), [SCAN_KEY, TEST_KEY]);
+    assert.equal(record(storage, TEST_KEY).version, VERSION);
+    assert.equal(record(storage, TEST_KEY).matchedFrom.find(row => row.id === TWENTY).to, TR_PRO_TARGET);
+    assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, rules);
+  });
+
+  test("Pro atomically disables only its legacy 20TB rule, preserves IDs and history, and TR20 reuses that row", () => {
+    for (const enabled of [true, false]) {
+      for (const prefixState of ["absent", "disabled", "already-gemini"]) {
+        const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET, enabled });
+        const prefix = { ...DEFAULT_RULES[0], id: "existing-pro-prefix",
+          to: prefixState === "already-gemini" ? TR_PRO_TARGET : TARGET, enabled: prefixState === "already-gemini" };
+        const rules = [exactRule({ id: "other-rule", enabled: false }), legacy, DEFAULT_RULES[2],
+          ...(prefixState === "absent" ? [] : [prefix])];
+        const storage = legacyProStorage(rules);
+        const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+        const historical = exported(variant, storage).data;
+        const initialHTML = htmlPage(variant, storage).payload.response.body;
+        assert.equal(presetCardText(initialHTML, "pro-1yuan").includes("当前规则一致"), prefixState === "already-gemini" && !enabled);
+        const changed = change(variant, storage, "preset", "pro-1yuan");
+        assertPresetRules(changed.config, presetById("pro-1yuan"));
+        assert.deepEqual(changed.config.rules.slice(0, rules.length).map(rule => rule.id), rules.map(rule => rule.id));
+        assert.deepEqual(changed.config.rules.find(rule => rule.id === legacy.id), { ...legacy, enabled: false });
+        assert.deepEqual(changed.config.rules[0], rules[0]);
+        assert.deepEqual(changed.config.rules[2], rules[2]);
+        assert.equal(changed.config.rules.length, rules.length + (prefixState === "absent" ? 1 : 0));
+        assert.equal(changed.config.rules.at(-1).from, "g1.ios.2tb.");
+        if (prefixState !== "absent") assert.equal(changed.config.rules.at(-1).id, prefix.id);
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+        const afterSave = exported(variant, storage).data;
+        assert.deepEqual(afterSave.scan, historical.scan);
+        assert.deepEqual(afterSave.test, historical.test);
+        assert(presetCardText(changed.html, "pro-1yuan").includes("当前规则一致"));
+        assert(!changed.html.includes("最近一次映射执行已读取当前配置"));
+        assert(changed.html.includes("最近一次执行记录来自 <code>g1-acq-v7.11-mappings</code>"));
+        const repeated = change(variant, storage, "preset", "pro-1yuan");
+        assert.notEqual(repeated.config.revision, changed.config.revision);
+        assert.deepEqual(repeated.config.rules, changed.config.rules);
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+        const runtime = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
+        assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, TWENTY, DEFAULT_RULES[2].to, COM_SOURCE]);
+        const executed = exported(variant, storage).data;
+        assert.equal(executed.test.version, VERSION);
+        assert.equal(executed.test.mappingRevision, repeated.config.revision);
+        assert.equal(executed.test.target, TR_PRO_TARGET);
+        assert.deepEqual(executed.test.matchedFrom.map(row => [row.id, row.to]).sort(),
+          [[SOURCE, TR_PRO_TARGET], [THIRTY, DEFAULT_RULES[2].to]].sort());
+        const currentHTML = htmlPage(variant, storage).payload.response.body;
+        assert(currentHTML.includes("最近一次映射执行已读取当前配置"));
+        assert(!currentHTML.includes("最近一次执行记录来自 <code>g1-acq-v7.11-mappings</code>"));
+        const beforeTR20 = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+        const turkey = change(variant, storage, "preset", "tr-ultra-20tb");
+        assert.deepEqual(turkey.config.rules.map(rule => rule.id), changed.config.rules.map(rule => rule.id));
+        assert.deepEqual(turkey.config.rules.find(rule => rule.id === legacy.id), { ...legacy, to: TURKEY_TWENTY_TARGET, enabled: true });
+        assertPresetRules(turkey.config, presetById("pro-1yuan"));
+        assertPresetRules(turkey.config, presetById("tr-ultra-20tb"));
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], beforeTR20);
+        assert(presetCardText(turkey.html, "pro-1yuan").includes("当前规则一致"));
+        assert(presetCardText(turkey.html, "tr-ultra-20tb").includes("当前规则一致"));
+        const combined = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY]) });
+        assert.deepEqual(JSON.parse(combined.payload.body), [TR_PRO_TARGET, TURKEY_TWENTY_TARGET]);
+        assert.equal(exported(variant, storage).data.test.mappingRevision, turkey.config.revision);
+      }
+    }
+  });
+
+  test("Pro preserves other 20TB targets and Gemini rules with a different source or match type", () => {
+    for (const twentyTarget of [TURKEY_TWENTY_TARGET, DEFAULT_RULES[1].to, NEXT_TARGET]) {
+      const rules = [
+        exactRule({ id: "twenty-manual", from: TWENTY, to: twentyTarget }),
+        exactRule({ id: "twenty-prefix", match: "prefix", from: "g1.ios.20tb.", to: TR_PRO_TARGET }),
+        exactRule({ id: "twenty-extra", from: TWENTY + ".extra", to: TR_PRO_TARGET }),
+        exactRule({ id: "thirty-gemini", from: THIRTY, to: TR_PRO_TARGET }),
+        exactRule(),
+        { ...DEFAULT_RULES[0], enabled: false }
+      ];
+      const storage = legacyProStorage(rules);
+      const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+      const changed = change(variant, storage, "preset", "pro-1yuan");
+      assert.deepEqual(changed.config.rules.slice(0, -1), rules.slice(0, -1));
+      assert.deepEqual(changed.config.rules.map(rule => rule.id), rules.map(rule => rule.id));
+      assertPresetRules(changed.config, presetById("pro-1yuan"));
+      assert(presetCardText(changed.html, "pro-1yuan").includes("当前规则一致"));
+      assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+      const values = [SOURCE, TWENTY, "g1.ios.20tb.other", TWENTY + ".extra", THIRTY, COM_SOURCE];
+      const runtime = run(variant.script, { storage, body: JSON.stringify(values) });
+      assert.deepEqual(JSON.parse(runtime.payload.body), [TR_PRO_TARGET, twentyTarget, TR_PRO_TARGET, TR_PRO_TARGET, TR_PRO_TARGET, CUSTOM_TARGET]);
+      assert.equal(exported(variant, storage).data.test.matchedFrom.find(row => row.id === TWENTY).to, twentyTarget);
+    }
+  });
+
+  test("legacy Pro migration fills slot thirty, updates at capacity, and fails without partial disable when full", () => {
+    for (const scenario of [
+      { count: 29, prefix: false, status: 303 },
+      { count: 30, prefix: true, status: 303 },
+      { count: 30, prefix: false, status: 400 }
+    ]) {
+      const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET });
+      const base = [legacy, ...(scenario.prefix ? [{ ...DEFAULT_RULES[0], enabled: false }] : [])];
+      const fillers = Array.from({ length: scenario.count - base.length }, (_, index) =>
+        exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
+      const rules = [...base, ...fillers];
+      const storage = legacyProStorage(rules);
+      const before = [...storage];
+      const form = formFor(htmlPage(variant, storage).payload.response.body, "preset", "pro-1yuan");
+      const result = submit(variant, storage, form, "preset");
+      if (scenario.status === 400) {
+        assertRejected(result, 400, before);
+        assert.deepEqual(exported(variant, storage).data.mappingConfig.rules, rules);
+        assert.equal(formFor(result.payload.response.body, "upsert", legacy.id).fields.enabled, "1");
+      } else {
+        const html = assertRedirect(variant, result, "preset");
+        const config = exported(variant, storage).data.mappingConfig;
+        assert.equal(config.rules.length, 30);
+        assert.deepEqual(config.rules.slice(0, rules.length).map(rule => rule.id), rules.map(rule => rule.id));
+        assert.deepEqual(config.rules[0], { ...legacy, enabled: false });
+        assert.deepEqual(config.rules.slice(base.length, scenario.count), fillers);
+        assertPresetRules(config, presetById("pro-1yuan"));
+        assert(presetCardText(html, "pro-1yuan").includes("当前规则一致"));
+        assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], before.slice(1).map(([, value]) => value));
+      }
+    }
+  });
+
+  test("stale Pro forms and both merge-save races retain the enabled legacy row and history on 409", () => {
+    const rules = [DEFAULT_RULES[0], exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET }), DEFAULT_RULES[2]];
+    const storage = legacyProStorage(rules);
+    const old = formFor(htmlPage(variant, storage).payload.response.body, "preset", "pro-1yuan");
+    const latest = change(variant, storage, "upsert", "default-2tb", { to: CUSTOM_TARGET });
+    const before = [...storage];
+    const stale = submit(variant, storage, old, "preset");
+    assertRejected(stale, 409, before);
+    assert.equal(formFor(stale.payload.response.body, "preset", "pro-1yuan").fields.revision, latest.config.revision);
+    assert.equal(formFor(stale.payload.response.body, "upsert", "legacy-pro-entry").fields.enabled, "1");
+    for (const changedRead of [2, 3]) {
+      const racedStorage = legacyProStorage(rules);
+      const form = formFor(htmlPage(variant, racedStorage).payload.response.body, "preset", "pro-1yuan");
+      const concurrent = storedConfig([...rules, exactRule({ id: "concurrent-rule" })], { revision: "b".repeat(48) });
+      const expected = [...racedStorage].map(([key, value]) => [key, key === CONFIG_KEY ? JSON.stringify(concurrent) : value]);
+      let configReads = 0;
+      const raced = submit(variant, racedStorage, form, "preset", {}, {
+        read(key, current) {
+          if (key === CONFIG_KEY && ++configReads === changedRead) current.set(key, JSON.stringify(concurrent));
+          return current.get(key) || null;
+        }
+      });
+      assertRejected(raced, 409, expected);
+      assert(configReads >= changedRead);
+      assert.equal(formFor(raced.payload.response.body, "preset", "pro-1yuan").fields.revision, concurrent.revision);
+      assert.equal(formFor(raced.payload.response.body, "upsert", "legacy-pro-entry").fields.enabled, "1");
+      assert.deepEqual(exported(variant, racedStorage).data.mappingConfig.rules, concurrent.rules);
+      assert(!presetCardText(raced.payload.response.body, "pro-1yuan").includes("当前规则一致"));
+    }
+  });
+
+  test("Pro, Turkey, Ultra 75p and Pro12 restore current targets without reviving historical offers", () => {
     const oldTargets = ["g1.2tb.ai.annual", "g1.20tb.1month_eft.acq", "g1.ai.ultra.3months_ip_90p.acq"];
     const rules = DEFAULT_RULES.map((rule, index) => ({ ...rule, to: oldTargets[index], enabled: false }));
     const unrelated = exactRule();
     const storage = withConfig([...rules, unrelated]);
+    const expectedById = {
+      "pro-1yuan": [TR_PRO_TARGET, TWENTY, THIRTY, CUSTOM_TARGET],
+      "tr-ultra-20tb": [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, THIRTY, CUSTOM_TARGET],
+      "tr-ultra-30tb": [TR_PRO_TARGET, TURKEY_TWENTY_TARGET, TURKEY_TARGET, CUSTOM_TARGET],
+      "ultra-75p": [TR_PRO_TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET],
+      "pro-12months-90p": [TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET]
+    };
     for (const preset of PRESETS) {
       const changed = change(variant, storage, "preset", preset.id);
       assertPresetRules(changed.config, preset);
       assert.deepEqual(changed.config.rules.map(rule => rule.id), [...rules, unrelated].map(rule => rule.id));
       assert.deepEqual(changed.config.rules.at(-1), unrelated);
       const response = run(variant.script, { storage, body: JSON.stringify([SOURCE, TWENTY, THIRTY, COM_SOURCE]) });
-      const expected = preset.id === "pro-1yuan" ? [SOURCE, TR_PRO_TARGET, THIRTY, CUSTOM_TARGET] :
-        preset.id === "tr-ultra-30tb" ? [SOURCE, TR_PRO_TARGET, TURKEY_TARGET, CUSTOM_TARGET] :
-        preset.id === "ultra-75p" ? [SOURCE, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET] :
-        [TARGET, DEFAULT_RULES[1].to, DEFAULT_RULES[2].to, CUSTOM_TARGET];
-      assert.deepEqual(JSON.parse(response.payload.body), expected);
+      assert.deepEqual(JSON.parse(response.payload.body), expectedById[preset.id]);
     }
     const config = exported(variant, storage).data.mappingConfig;
     assert.deepEqual(config.rules, [...DEFAULT_RULES, unrelated]);
@@ -1293,8 +1687,9 @@ for (const variant of VARIANTS) {
     ];
     const storage = withConfig(rules);
     const unrelatedIndexes = [0, 1, 2, 5];
-    for (const preset of [PRESETS[3], PRESETS[0], PRESETS[2]]) {
-      const changed = change(variant, storage, "preset", preset.id);
+    for (const id of ["pro-1yuan", "tr-ultra-20tb", "ultra-75p", "pro-12months-90p"]) {
+      const preset = presetById(id);
+      const changed = change(variant, storage, "preset", id);
       assertPresetRules(changed.config, preset);
       assert.deepEqual(changed.config.rules.map(rule => rule.id), rules.map(rule => rule.id));
       for (const index of unrelatedIndexes) assert.equal(JSON.stringify(changed.config.rules[index]), JSON.stringify(rules[index]));
@@ -1321,7 +1716,7 @@ for (const variant of VARIANTS) {
       exactRule({ id: "last-filler", from: "g1.fixture.last_filler", enabled: false })]);
     const added = change(variant, oneSlot, "preset", "ultra-75p");
     assert.equal(added.config.rules.length, 30);
-    assertPresetRules(added.config, PRESETS[2]);
+    assertPresetRules(added.config, presetById("ultra-75p"));
     assert.equal(added.config.rules[0].id, "default-20tb");
     assert.equal(added.config.rules.at(-1).from, THIRTY);
     assert.equal(new Set(added.config.rules.map(rule => rule.id)).size, 30);
@@ -1343,23 +1738,30 @@ for (const variant of VARIANTS) {
     }
   });
 
-  test("reapplying a matching preset creates a fresh custom revision without duplicate rules", () => {
-    const storage = new Map();
-    const first = change(variant, storage, "preset", "ultra-75p");
-    assert.deepEqual(first.config.rules, DEFAULT_RULES);
-    assertStored(storage, DEFAULT_RULES);
-    assert.equal(first.config.mode, "custom");
-    run(variant.script, { storage, body: THIRTY });
-    const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
-    const second = change(variant, storage, "preset", "ultra-75p");
-    assert.notEqual(second.config.revision, first.config.revision);
-    assert.deepEqual(second.config.rules, first.config.rules);
-    assert.equal(new Set(second.config.rules.map(rule => rule.id)).size, 3);
-    assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
-    assert(second.html.includes("等待下一次方案页响应读取当前配置"));
-    assert(!second.html.includes("最近一次映射执行已读取当前配置"));
-    assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, DEFAULT_RULES[2].to);
-    assert.equal(record(storage, TEST_KEY).mappingRevision, second.config.revision);
+  test("reapplying each matching preset creates a fresh custom revision without duplicate rules", () => {
+    for (const preset of PRESETS) {
+      const storage = new Map();
+      const first = change(variant, storage, "preset", preset.id);
+      const expectedRules = DEFAULT_RULES.map(rule => {
+        const replacement = preset.rules.find(candidate => candidate.match === rule.match && candidate.from === rule.from);
+        return replacement ? { ...rule, ...replacement } : rule;
+      });
+      assert.deepEqual(first.config.rules, expectedRules);
+      assertStored(storage, expectedRules);
+      assert.equal(first.config.mode, "custom");
+      const source = preset.rules[0].match === "prefix" ? SOURCE : preset.rules[0].from;
+      run(variant.script, { storage, body: source });
+      const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+      const second = change(variant, storage, "preset", preset.id);
+      assert.notEqual(second.config.revision, first.config.revision);
+      assert.deepEqual(second.config.rules, first.config.rules);
+      assert.equal(new Set(second.config.rules.map(rule => rule.id)).size, 3);
+      assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
+      assert(second.html.includes("等待下一次方案页响应读取当前配置"));
+      assert(!second.html.includes("最近一次映射执行已读取当前配置"));
+      assert.equal(run(variant.script, { storage, body: source }).payload.body, preset.rules[0].to);
+      assert.equal(record(storage, TEST_KEY).mappingRevision, second.config.revision);
+    }
   });
 
   test("old preset forms return 409 after another preset save and expose the newest revision", () => {
@@ -1455,7 +1857,7 @@ for (const variant of VARIANTS) {
     assertRedirect(variant, submit(variant, storage, reset, "reset"), "reset");
     assertStored(storage, [], false);
     const applied = change(variant, storage, "preset", "tr-ultra-30tb");
-    assertPresetRules(applied.config, PRESETS[1]);
+    assertPresetRules(applied.config, presetById("tr-ultra-30tb"));
     assert.equal(run(variant.script, { storage, body: THIRTY }).payload.body, TURKEY_TARGET);
   });
 
@@ -1683,12 +2085,13 @@ nodeTest("preset catalog has the exact public shape and returns isolated objects
       assert.deepEqual(Object.keys(first[index].rules[ruleIndex]).sort(), ["enabled", "from", "match", "to"]);
     }
   }
-  first[0].id = "changed-id";
-  first[0].title = "changed-title";
-  first[0].description = "changed-description";
-  first[0].rules[0].to = NEXT_TARGET;
-  first[1].rules.pop();
-  first[2].rules = [];
+  const pro = first.find(preset => preset.id === "pro-1yuan");
+  pro.id = "changed-id";
+  pro.title = "changed-title";
+  pro.description = "changed-description";
+  pro.rules[0].to = NEXT_TARGET;
+  first.find(preset => preset.id === "tr-ultra-30tb").rules.pop();
+  first.find(preset => preset.id === "ultra-75p").rules = [];
   first.push({ id: "injected-preset", rules: [] });
   assert.deepEqual(plain(harness.invoke("presets")), PRESETS);
   assert.deepEqual(plain(second), PRESETS);
@@ -1711,12 +2114,12 @@ nodeTest("applyPreset accepts only builtin IDs and ignores caller-supplied rule 
     assert.deepEqual(harness.writes, []);
   }
   const catalog = harness.invoke("presets");
-  catalog[0].rules[0].to = NEXT_TARGET;
+  catalog.find(preset => preset.id === "tr-ultra-30tb").rules[0].to = NEXT_TARGET;
   const result = plain(harness.invoke("applyPreset", "a".repeat(48), "tr-ultra-30tb", [exactRule({ from: THIRTY, to: NEXT_TARGET })]));
   assert.equal(result.ok, true);
   assert.equal(result.status, 200);
   assert.equal(result.error, "");
-  assert.deepEqual(withoutIds(result.config.rules), PRESETS[1].rules);
+  assert.deepEqual(withoutIds(result.config.rules), presetById("tr-ultra-30tb").rules);
   assert.deepEqual(harness.writes.map(write => write.key), [CONFIG_KEY]);
   assertStored(harness.storage, result.config.rules);
 });
@@ -1732,7 +2135,7 @@ nodeTest("preset insertion stays unique and bounded when every random value repe
   assert.equal(applied.status, 200);
   assert.equal(applied.config.rules.length, 30);
   assert.deepEqual(applied.config.rules.slice(0, 28), rules);
-  assert.deepEqual(withoutIds(applied.config.rules.slice(28)), PRESETS[2].rules);
+  assert.deepEqual(withoutIds(applied.config.rules.slice(28)), presetById("ultra-75p").rules);
   assert.equal(new Set(applied.config.rules.map(rule => rule.id)).size, 30);
   assert(applied.config.rules.every(rule => /^[a-z][a-z0-9-]{0,39}$/.test(rule.id)));
   assert.equal(harness.invoke("validateRules", applied.config.rules).ok, true);
@@ -1782,6 +2185,48 @@ nodeTest("applyPreset exposes stale, invalid, unavailable, over-limit and final-
   assert.deepEqual(harness.reads, [CONFIG_KEY, CONFIG_KEY]);
   assert.deepEqual(harness.writes, []);
   assert.equal(harness.storage.get(CONFIG_KEY), JSON.stringify(concurrent));
+});
+
+nodeTest("Pro cleanup leaves the returned current config and storage intact on capacity failure or revision conflict", () => {
+  const legacy = exactRule({ id: "legacy-pro-entry", from: TWENTY, to: TR_PRO_TARGET });
+  const fillers = Array.from({ length: 29 }, (_, index) =>
+    exactRule({ id: "filler-" + index, from: "g1.fixture.filler_" + index }));
+  for (const scenario of [
+    { rules: [legacy, ...fillers], revision: "a".repeat(48), status: 400 },
+    { rules: [legacy, DEFAULT_RULES[0]], revision: "b".repeat(48), status: 409 }
+  ]) {
+    const storage = legacyProStorage(scenario.rules);
+    const harness = engineHarness({ storage });
+    const current = harness.invoke("read");
+    const snapshot = plain(current);
+    const before = [...storage];
+    const result = plain(harness.invoke("applyPreset", scenario.revision, "pro-1yuan"));
+    assert.equal(result.ok, false);
+    assert.equal(result.status, scenario.status);
+    assert.deepEqual(result.config, snapshot, "failed merges must return the original enabled legacy row");
+    assert.deepEqual(plain(current), snapshot);
+    assert.deepEqual(harness.writes, []);
+    assert.deepEqual([...storage], before);
+  }
+  const rules = [legacy, DEFAULT_RULES[0]];
+  const concurrent = storedConfig([...rules, exactRule()], { revision: "b".repeat(48) });
+  const storage = legacyProStorage(rules);
+  const history = [storage.get(SCAN_KEY), storage.get(TEST_KEY)];
+  const harness = engineHarness({
+    storage,
+    read(key, current, calls) {
+      if (calls.reads.length === 2) current.set(key, JSON.stringify(concurrent));
+      return current.get(key) || null;
+    }
+  });
+  const result = plain(harness.invoke("applyPreset", "a".repeat(48), "pro-1yuan"));
+  assert.equal(result.status, 409);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.config.rules, concurrent.rules);
+  assert.equal(result.config.revision, concurrent.revision);
+  assert.deepEqual(harness.writes, []);
+  assert.equal(storage.get(CONFIG_KEY), JSON.stringify(concurrent));
+  assert.deepEqual([storage.get(SCAN_KEY), storage.get(TEST_KEY)], history);
 });
 
 nodeTest("mapping config generated blocks and aliases share the real engine and --check is read-only", () => {
