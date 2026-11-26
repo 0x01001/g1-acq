@@ -6,9 +6,9 @@
 
 Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **Shadowrocket / 小火箭**。
 
-**v7.10.0 主模块为 G1 ACQ SKU 管理，新增三套预制映射模板。** 打开[本地报告页](https://one.google.com/g1-sku-report)，在 **预制映射模板** 中点击 **应用模板**，即可直接合并并保存到手机本地，无需再填源、目标或另点保存。页面继续支持添加、编辑、勾选启用、逐条保存、删除映射和恢复默认；采集列表可预填源，输入框提供已采集 SKU 与模板目标候选。**点击时保存配置，下一次 `/ai?` 响应才使用新规则**，已打开或缓存的方案页需重新进入。
+**v7.11.0 主模块为 G1 ACQ SKU 管理，新增「1 元开 Pro」预制模板，目标命名空间支持 com.google.gemini.*。** 打开[本地报告页](https://one.google.com/g1-sku-report)，在 **预制映射模板** 中点击 **应用模板**，即可直接合并并保存到手机本地，无需再填源、目标或另点保存。页面继续支持添加、编辑、勾选启用、逐条保存、删除映射和恢复默认；采集列表可预填源，输入框提供已采集 SKU 与模板目标候选。**点击时保存配置，下一次 `/ai?` 响应才使用新规则**，已打开或缓存的方案页需重新进入。
 
-默认模式 `discount75` 保留 20TB / 30TB 三个月 75p 和原始 iOS 2TB → `g1.2tb.ai.12months_ip_90p`；应用模板或保存手动规则后为 `custom`，即使模板目标恰好与默认相同。**75p = 75% off、实付 25%、2.5折**。当前改写运行版本为 `g1-acq-v7.10-mappings`，保留原始 SKU 采集、最近 10 次响应、重复诊断与 JSON 导出，无需另装扫描器；完整步骤见 [SKU 管理、Pro 12个月优惠测试与采集](docs/pro-annual-test.md)。
+默认模式 `discount75` 保留 20TB / 30TB 三个月 75p 和原始 iOS 2TB → `g1.2tb.ai.12months_ip_90p`；应用模板或保存手动规则后为 `custom`，即使模板目标恰好与默认相同。**75p = 75% off、实付 25%、2.5折**。当前改写运行版本为 `g1-acq-v7.11-mappings`，保留原始 SKU 采集、最近 10 次响应、重复诊断与 JSON 导出，无需另装扫描器；完整步骤见 [SKU 管理、Pro 12个月优惠测试与采集](docs/pro-annual-test.md)。
 
 采集只读取手机实际收到的匹配响应，**不会主动查询全量 SKU**；旧 ID 再次出现时累加次数。字符串改写与 App Store 商品返回分别记录，商品名称、周期、初次与续费金额按收银台实际显示核对，权益按 Google One 账户实际状态记录。
 
@@ -17,28 +17,28 @@ Google One（iOS）订阅入口的商品 ID 改写与采集工具，适用于 **
 **G1 ACQ SKU 管理 — 三套预制模板与本地手动映射，保留默认 75p 与 2TB 目标**
 
 ```text
-https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.10.0/g1-acq-ultra-discount.sgmodule
+https://cdn.jsdelivr.net/gh/crhywun/g1-acq@v7.11.0/g1-acq-ultra-discount.sgmodule
 ```
 
 | 项目 | 当前主入口 |
 |---|---|
 | 当前配置 `configuredMode` | 默认 `discount75`；应用模板或保存手动规则后 `custom` |
 | 响应脚本 | [g1-acq-discount.js](g1-acq-discount.js)，与 [g1-acq.js](g1-acq.js) 实现相同 |
-| 响应运行版本 | `g1-acq-v7.10-mappings` |
+| 响应运行版本 | `g1-acq-v7.11-mappings` |
 | 报告脚本 | [g1-sku-report-discount.js](g1-sku-report-discount.js)，与 [g1-sku-report.js](g1-sku-report.js) 实现相同 |
-| 报告版本 | `v7.10.0` |
+| 报告版本 | `v7.11.0` |
 | 默认 2TB 目标 | `g1.2tb.ai.12months_ip_90p`，无 `.acq` |
 | 本地数据 | 沿用 v7.9 的三个 schema 1 键；模板结果仍保存在 `g1.sku.mappings.v1`，无数据迁移 |
 
 首次安装时在小火箭模块管理中添加上方地址并启用。升级顺序为：**关闭旧模块 → 安装新地址 → 只开启 G1 ACQ SKU 管理一个改写入口 → 重新连接小火箭 → 重新打开 Google App 的方案页**。曾安装 **G1 ACQ Ultra 75p**、**G1 ACQ**、**G1 ACQ Ultra 一折**、**G1 ACQ Ultra 试用**、独立 **G1 SKU Scan**、**G1 Pro Annual Test** 或其它改写副本时，停用旧副本，避免重复计数或改写。
 
-安装入口与全部内部脚本固定引用 `@v7.10.0`，无需单独添加脚本。**旧固定链接需换成新地址，不会自动更新。** 当前树保留四个模块，试用模块仍缺席；历史 `v7.9.0` / `v7.8.0` / `v7.7.0` / `v7.6.0` / `v7.5.0` / `v7.4.0` / `v7.3.0` / `v7.2.0` / `v7.1.0` / `v7.0.0` 与 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保持原样，旧试用链接仍指向原内容。
+安装入口与全部内部脚本固定引用 `@v7.11.0`，无需单独添加脚本。**旧固定链接需换成新地址，不会自动更新。** 当前树保留四个模块，试用模块仍缺席；历史 `v7.10.0` / `v7.9.0` / `v7.8.0` / `v7.7.0` / `v7.6.0` / `v7.5.0` / `v7.4.0` / `v7.3.0` / `v7.2.0` / `v7.1.0` / `v7.0.0` 与 `pro-annual-test-v1` / `pro-annual-test-v2` 标签保持原样，旧试用链接仍指向原内容。
 
 升级沿用 `g1.sku.scan.v1`、`g1.pro.annual.test.v1`、`g1.sku.mappings.v1`，三个键的 `schemaVersion=1` 保持不变，无自动配置迁移；v7.9 已保存的手动规则、累计 SKU、次数、最近 10 次响应和旧执行记录继续保留。当前配置与实际采集、执行记录分别显示，应用模板、保存或恢复规则不重写历史版本、模式、目标与时间。
 
 [g1-acq-v7.sgmodule](g1-acq-v7.sgmodule) 保留名称 **G1 ACQ**；[g1-pro-annual-test.sgmodule](g1-pro-annual-test.sgmodule) 保留名称 **G1 Pro Annual Test** 和仅 `/ai?` 的响应范围，二者使用同一本地映射配置。[g1-sku-scan.sgmodule](g1-sku-scan.sgmodule) 更新下载 pin 并保留报告请求体配置，扫描实现仍为 `pro-annual-test-v2`，保持响应原文，没有模式或响应事件字段；报告保留其真实旧版本、空模式与缺失历史。四个报告 `http-request` 均设置 `requires-body=1,max-size=0`，供本地表单提交使用。
 
-## 三套预制映射模板
+## 四套预制映射模板
 
 报告的 **预制映射模板** 位于手动规则前，按以下顺序展示；点击卡片的 **应用模板** 即提交原生 POST，成功后以 **303** 返回报告，并提示模板已保存到本机、下一次匹配响应读取新配置。
 
@@ -68,7 +68,7 @@ Ultra 模板同时切换 20TB / 30TB，75p 表示减免 75%、实付 25%；2TB /
 | 精确 `exact` | `g1.ios.20tb.m.v2` | `g1.20tb.3months_ip_75p.acq` |
 | 精确 `exact` | `g1.ios.30tb.ai.pro.m` | `g1.ai.ultra.3months_ip_75p.acq` |
 
-编辑时选择**精确或前缀**，填写源与完整目标 ID，勾选“启用”后保存。精确源与目标支持 `g1.*` / `com.google.one.*`，命名空间之后有 1–160 个字母、数字、点、下划线或连字符，完整 ID 不以点结尾；**前缀源以点结尾**且命名空间之后有内容，只匹配带非空后缀的完整 SKU。相同匹配方式与源的规则重复、源与目标相同、非法 ID 或超过 **30 条**时提交被拒绝，禁用规则也计入上限与重复检查。
+编辑时选择**精确或前缀**，填写源与完整目标 ID，勾选“启用”后保存。精确源与目标支持 `g1.*` / `com.google.one.*` / `com.google.gemini.*`，命名空间之后有 1–160 个字母、数字、点、下划线或连字符，完整 ID 不以点结尾；**前缀源以点结尾**且命名空间之后有内容，只匹配带非空后缀的完整 SKU。相同匹配方式与源的规则重复、源与目标相同、非法 ID 或超过 **30 条**时提交被拒绝，禁用规则也计入上限与重复检查。
 
 **启用的精确规则优先；否则采用最长的启用前缀。** 禁用规则不参与匹配；每个原始 ID 只替换一次，目标不再继续匹配另一条规则。删除全部规则或全部取消启用并保存后，响应原样通过。目标是否已在原响应或累计清单中出现，不影响规则执行；本版无备用目标，命中行 `fallback=false`。
 
@@ -92,7 +92,7 @@ Ultra 模板同时切换 20TB / 30TB，75p 表示减免 75%、实付 25%；2TB /
 ## 手机端使用流程
 
 1. 保持主入口开启与小火箭连接，在 **Google App（彩色 G 图标）→ Google One 管理** 浏览实际提供的 2TB / Pro、20TB / 30TB、月付、年付和优惠入口，让模块采集原始 SKU。
-2. 在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)，核对 **本机脚本已接管** 与 **v7.10.0**。在 **预制映射模板** 中点击 **应用模板** 直接合并保存；卡片已显示 **当前规则一致** 时，点击仍会保存并生成新修订。
+2. 在 Safari 打开[本地报告](https://one.google.com/g1-sku-report)，核对 **本机脚本已接管** 与 **v7.11.0**。在 **预制映射模板** 中点击 **应用模板** 直接合并保存；卡片已显示 **当前规则一致** 时，点击仍会保存并生成新修订。
 3. 手动规则可从采集列表点源预填，或在新增表单填写源与目标；输入支持已采集 SKU 与模板目标候选。选择精确或前缀、勾选启用，再点该条的**保存**；取消勾选后保存可禁用。**删除**只移除该条；**恢复默认**替换全部规则为默认三条，不清历史。
 4. 成功后 303 返回报告并提示已保存，核对当前配置。手动非法提交保留本次填写并显示错误；模板超过 30 条时整批失败；旧页面冲突提示后刷新、核对最新规则再提交；存储失败时不显示成功，刷新核对实际配置。
 5. 重新进入 Google App 方案页，使下一次 `/ai?` 响应使用已保存配置；刷新报告，分别核对当前 `mappingConfig.revision` 与最近执行的 `test.mappingRevision`、`test.version`、`test.mode`、`test.updatedAt`。保存本身不改变旧执行记录。
@@ -116,7 +116,7 @@ Ultra 模板同时切换 20TB / 30TB，75p 表示减免 75%、实付 25%；2TB /
 
 | 当前 JSON 字段 | 含义 |
 |---|---|
-| `reportVersion=v7.10.0` | 报告脚本版本，与保存的采集、执行版本独立 |
+| `reportVersion=v7.11.0` | 报告脚本版本，与保存的采集、执行版本独立 |
 | `mappingConfig` | 当前有效配置：`status, revision, updatedAt, mode, customized, rules, target, targetOrigin, error, limit`，`limit=30` |
 | `mappingConfig.rules[]` | `{id, match, from, to, enabled}`；规则 ID 由本机生成，模板匹配已有规则时保留 ID，`match` 为 `exact` 或 `prefix` |
 | `mappingConfig.status` | `default` 默认、`custom` 手动、`invalid` 配置损坏、`unavailable` 读取失败；后两种暂停改写并显示错误 |
